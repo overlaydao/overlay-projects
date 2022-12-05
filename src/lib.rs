@@ -1,23 +1,20 @@
 use concordium_std::*;
 use core::fmt::Debug;
 
-type ProjectId = u64;
-
-#[derive(Serial, Deserial)]
-struct ContractState {
-    setter: AccountAddress,
-    staking_contract_addr: ContractAddress,
-}
+type ProjectId = String;
 
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
+    admin: AccountAddress,
+    staking_contract_addr: ContractAddress,
     project: StateMap<ProjectId, ProjectState<S>, S>,
 }
 
 #[derive(Serial, Deserial)]
 struct ProjectState {
     owners: Option<Vec<AccountAddress>>,
+    pub_key: Option<String>,
     token_addr: Option<ContractAddress>,
     seed_nft_addr: Option<ContractAddress>,
     sale_addr: Option<ContractAddress>,
@@ -35,8 +32,13 @@ enum ProjectStatus {
 }
 
 #[derive(Serial, Deserial, SchemaType)]
-struct UpdateContractStateParams {
+struct UpdateContractStateParam {
     staking_contract_addr: ContractAddress,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
+struct TransferAdminParam {
+    admin: AccountAddress,
 }
 
 #[derive(Serial, Deserial, SchemaType)]
@@ -52,9 +54,21 @@ struct ValidateProjectParam {
 }
 
 #[derive(Serial, Deserial, SchemaType)]
+struct AddPubKeyParam {
+    project_id: ProjectId,
+    pub_key: String,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
 struct AddSeedSaleParam {
     project_id: ProjectId,
     seed_nft_addr: ContractAddress,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
+struct AddTokenAddrParam {
+    project_id: ProjectId,
+    token_addr: ContractAddress,
 }
 
 #[derive(Serial, Deserial, SchemaType)]
@@ -63,55 +77,71 @@ struct AddSaleParam {
     seed_addr: ContractAddress,
 }
 
+#[derive(Serial, Deserial, SchemaType)]
+struct StartSaleParam {
+    project_id: ProjectId,
+}
+
 #[derive(Debug, PartialEq, Eq, Reject, Serial, SchemaType)]
 enum Error {
     #[from(ParseError)]
     ParseParamsError,
     InvalidCaller,
-}
-
-impl<S: HasStateApi> ContractState {
-    fn update(_staking_contract_addr: ContractAddress) -> Self {
-        ContractState {
-            setter: self.setter,
-            staking_contract_addr: _staking_contract_addr,
-        }
-    }
+    ShouldBeSeedNFT,
 }
 
 #[init(contract = "overlay-projects", parameter = "InitParams")]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
-) -> InitResult<ContractState> {
-    let params: UpdateContractStateParams = ctx.parameter_cursor().get()?;
-    let contract_state = ContractState {
-        setter: ctx.center(),
+) -> InitResult<State> {
+    let params: UpdateContractStateParam = ctx.parameter_cursor().get()?;
+    let state = State {
+        admin: ctx.center(),
         staking_contract_addr: params.staking_contract_addr,
+        project: state_builder.new_map(),
     };
-    Ok(ContractState);
+    Ok(state);
 }
 
 #[receive(
     contract = "overlay-projects",
     name = "update_contract_state",
-    parameter = "UpdateContractStateParams",
+    parameter = "UpdateContractStateParam",
     mutable
 )]
 fn contract_update_contract_state<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<ContractState>,
+    host: &mut impl HasHost<State>,
 ) -> ReceiveResult<()> {
-    let params: UpdateContractStateParams = ctx.parameter_cursor().get()?;
+    let params: UpdateContractStateParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    ensure!(ctx.sender() == state.setter, Error::InvalidCaller);
+    ensure!(ctx.sender() == state.admin, Error::InvalidCaller);
 
-    state.update(params.staking_contract_addr);
+    state.staking_contract_addr = params.staking_contract_addr;
     Ok(());
 }
 
 #[receive(
-    contrct = "overlay-projects",
+    contract = "overlay-projects",
+    name = "transfer_admin",
+    parameter = "TransferAdminParam",
+    mutable
+)]
+fn contract_transfer_admin<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveResult<()> {
+    let params: TransferAdminParam = ctx.parameter_cursor().get()?;
+    let state = host.state_mut();
+    ensure!(ctx.sender() == state.admin, Error::InvalidCaller);
+
+    state.admin = params.admin;
+    Ok(());
+}
+
+#[receive(
+    contract = "overlay-projects",
     name = "curate_project",
     parameter = "CureateProjectParam"
     mutable
@@ -129,6 +159,7 @@ fn contract_curate_project<S: HasStateApi>(
         params.project_id,
         ProjectState {
             owners: None,
+            pub_key: None,
             token_addr: None,
             seed_nft_addr: None,
             sale_addr: None,
@@ -139,7 +170,7 @@ fn contract_curate_project<S: HasStateApi>(
 }
 
 #[receive(
-    contrct = "overlay-projects",
+    contract = "overlay-projects",
     name = "validate_project",
     parameter = "ValidateProjectParam"
     mutable
@@ -153,78 +184,174 @@ fn contract_validate_project<S: HasStateApi>(
     let isValidator; // todo    invoke contract to user
     ensure!(isValidator, Error::InvalidCaller);
 
+    if params.token_addr == None {
+        state.project.insert(
+            params.project_id,
+            ProjectState {
+                owners: Some(params.owners),
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Whitelist,
+            },
+        );
+    } else {
+        state.project.insert(
+            params.project_id,
+            ProjectState {
+                owners: Some(params.owners),
+                pub_key: None,
+                token_addr: Some(params.token_addr),
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Whitelist,
+            },
+        );
+    }
+    Ok(());
+}
+
+#[receive(
+    contract = "overlay-projects",
+    name = "add_pub_key",
+    parameter = "AddPubKeyParam",
+    mutable
+)]
+fn contract_add_pub_key<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveContext<()> {
+    let params: AddPubKeyParam = ctx.parameter_cursor().get()?;
+    let state = host.state_mut();
+    let old_values = state.project.get(params.project_id);
+    ensure!(ctx.sender() == state.admin, Error::InvalidCaller);
+
     state.project.insert(
-        params.project_id,
+        parrams.project_id,
         ProjectState {
-            owners: Some(params.owners),
-            token_addr: Some(params.token_addr),
-            seed_nft_addr: None,
-            sale_addr: None,
-            status: ProjectStatus::Whitelist,
-        },
+            owners: Some(old_values.owners),
+            pub_key: Some(params.pub_key),
+            token_addr: Some(old_values.token_addr),
+            seed_nft_addr: Some(old_values.seed_nft_addr),
+            sale_addr: Some(old_values.sale_addr),
+            status: Some(old_values.status),
+        }
     );
     Ok(());
 }
 
 #[receive(
-    contrct = "overlay-projects",
+    contract = "overlay-projects",
     name = "add_seed_sale",
     parameter = "AddSeedSaleParam"
     mutable
 )]
 fn contract_add_seed_sale<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    _host: &impl HasHost<ContractState<S>, StateApiType = S>,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveResult<()> {
     let params: AddSeedSaleParam = ctx.parameter_cursor().get()?;
-    let contract_state = _host.state();
     let state = host.state_mut();
     let old_values = state.project.get(params.project_id);
-    ensure!(ctx.sender() == contract_state.setter, Error::InvalidCaller);
+    ensure!(ctx.sender() == state.admin, Error::InvalidCaller);
 
     state.project.insert(
         params.project_id,
         ProjectState {
             owners: Some(old_values.owners),
+            pub_key: Some(old_values.pub_key),
             token_addr: Some(old_values.token_addr),
             seed_nft_addr: Some(params.seed_nft_addr),
             sale_addr: Some(old_values.sale_addr),
-            status: Some(old_values.status),
+            status: old_values.status,
         },
-    )
+    );
 }
 
 #[receive(
-    contrct = "overlay-projects",
+    contract = "overlay-projects",
+    name = "add_token_addr",
+    parameter = "AddTokenAddrParam"
+)]
+fn contract_add_token_addr<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveContext<()> {
+    let params: AddTokenAddrParam = ctx.parameter_cursor().get()?;
+    let state = host.state_mut();
+    let old_values = state.project.get(params.project_id);
+    ensure!(ctx.sender() == state.admin, Error::InvalidCaller);
+    ensure!(old_values.seed_nft_addr != None, Error::ShouldBeSeedNFT);
+
+    state.project.insert(
+        params.project_id,
+        ProjectState {
+            owners: Some(old_values.owners),
+            pub_key: Some(old_values.pub_key),
+            token_addr: Some(params.token_addr),
+            seed_nft_addr: Some(old_values.seed_nft_addr),
+            sale_addr: Some(old_values.sale_addr),
+            status: old_values.status,
+        },
+    );
+}
+
+#[receive(
+    contract = "overlay-projects",
     name = "add_sale",
     parameter = "AddSaleParam"
     mutable
 )]
 fn contract_add_sale<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    _host: &impl HasHost<ContractState<S>, StateApiType = S>,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveResult<()> {
     let params: AddSaleParam = ctx.parameter_cursor().get()?;
-    let contract_state = _host.state();
     let state = host.state_mut();
     let old_values = state.project.get(params.project_id);
-    ensure!(ctx.sender() == contract_state.setter, Error::InvalidCaller);
+    ensure!(ctx.sender() == state.admin, Error::InvalidCaller);
 
     state.project.insert(
         params.project_id,
         ProjectState {
             owners: Some(old_values.owners),
+            pub_key: Some(old_values.pub_key),
             token_addr: Some(old_values.token_addr),
             seed_nft_addr: Some(old_values.seed_nft_addr),
             sale_addr: Some(params.sale_addr),
-            status: Some(old_values.status),
+            status: old_values.status,
         },
     );
 }
 
-// start_sale
+#[receive(
+    contract = "overlay-projects",
+    name = "start_sale",
+    parameter = "StartSaleParam"
+    mutable
+)]
+fn contract_start_sale<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveContext<()> {
+    let params = StartSaleParam = ctx.parameter_cursor().get()?;
+    let state = host.state_mut();
+    let old_values = state.project.get(params.project_id);
+    ensure!(ctx.sender() === state.admin, Error::InvalidCaller);
+
+    state.project.insert(
+        params.project_id,
+        ProjectState {
+            owners: Some(old_values.owners),
+            pub_key: Some(old_values.pub_key),
+            token_addr: Some(old_values.token_addr),
+            seed_nft_addr: Some(old_values.seed_nft_addr),
+            sale_addr: Some(old_values.sale_addr),
+            status: ProjectStatus::Onsale,
+        },
+    );
+}
 
 // view_project_state
 
