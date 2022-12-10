@@ -8,6 +8,7 @@ type ProjectId = String;
 struct State<S> {
     admin: AccountAddress,
     staking_contract_addr: ContractAddress,
+    user_contract_addr: ContractAddress,
     project: StateMap<ProjectId, ProjectState<S>, S>,
 }
 
@@ -34,6 +35,7 @@ enum ProjectStatus {
 #[derive(Serial, Deserial, SchemaType)]
 struct UpdateContractStateParam {
     staking_contract_addr: ContractAddress,
+    user_contract_addr: ContractAddress,
 }
 
 #[derive(Serial, Deserial, SchemaType)]
@@ -82,6 +84,16 @@ struct StartSaleParam {
     project_id: ProjectId,
 }
 
+#[derive(Serial, Deserial, SchemaType)]
+struct ViewProjectParam {
+    project_id: ProjectId,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
+struct AddrParam {
+    addr: AccountAddress,
+}
+
 #[derive(Debug, PartialEq, Eq, Reject, Serial, SchemaType)]
 enum Error {
     #[from(ParseError)]
@@ -99,6 +111,7 @@ fn contract_init<S: HasStateApi>(
     let state = State {
         admin: ctx.center(),
         staking_contract_addr: params.staking_contract_addr,
+        user_contract_addr: params.user_contract_addr,
         project: state_builder.new_map(),
     };
     Ok(state);
@@ -112,13 +125,14 @@ fn contract_init<S: HasStateApi>(
 )]
 fn contract_update_contract_state<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State>,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveResult<()> {
     let params: UpdateContractStateParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.sender() == state.admin, Error::InvalidCaller);
 
     state.staking_contract_addr = params.staking_contract_addr;
+    state.user_contract_addr = params.user_contract_addr;
     Ok(());
 }
 
@@ -152,8 +166,16 @@ fn contract_curate_project<S: HasStateApi>(
 ) -> ReceiveResult<()> {
     let params: CureateProjectParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    let isCurator; // todo   invoke contract to user
-    ensure!(isCurator, Error::InvalidCaller);
+    let state_params = AddrParam {
+        addr: ctx.sender()
+    };
+    let user_state: bool = host.invoke_contract_read_only(
+        &State.user_contract_addr,
+        &state_params,
+        "view_user",
+        Amount::zero(),
+    )
+    ensure!(user_state.is_curator, Error::InvalidCaller);
 
     state.project.insert(
         params.project_id,
@@ -181,8 +203,16 @@ fn contract_validate_project<S: HasStateApi>(
 ) -> ReceiveResult<()> {
     let params: ValidateProjectParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    let isValidator; // todo    invoke contract to user
-    ensure!(isValidator, Error::InvalidCaller);
+    let state_params = AddrParam {
+        addr: ctx.sender()
+    };
+    let user_state: bool = host.invoke_contract_read_only(
+        &State.user_contract_addr,
+        &state_params,
+        "view_user",
+        Amount::zero(),
+    )
+    ensure!(user_state.is_validator, Error::InvalidCaller);
 
     if params.token_addr == None {
         state.project.insert(
@@ -335,7 +365,7 @@ fn contract_start_sale<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveContext<()> {
-    let params = StartSaleParam = ctx.parameter_cursor().get()?;
+    let params: StartSaleParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     let old_values = state.project.get(params.project_id);
     ensure!(ctx.sender() === state.admin, Error::InvalidCaller);
@@ -353,7 +383,35 @@ fn contract_start_sale<S: HasStateApi>(
     );
 }
 
-// view_project_state
+#[receive(
+    contract = "overlay-projects",
+    name = "view_admin",
+    return_value = "State"
+)]
+fn view_admin<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveResult<State> {
+    ensure!(ctx.sender == state.admin, Error::InvalidCaller);
+    let state = host.state();
+    Ok(State);
+}
+
+#[receive(
+    contract = "overlay-projects",
+    name = "view_project",
+    parameter = "ViewProjectParam",
+    return_value = "ProjectState"
+)]
+fn view_project<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveResult<ProjectState> {
+    let params: ViewProjectParam = ctx.parameter_cursor().get()?;
+    let state = host.state();
+    let project_state = state.project.get(params.project_id);
+    Ok(project_state);
+}
 
 #[cfg(test)]
 mod tests {
