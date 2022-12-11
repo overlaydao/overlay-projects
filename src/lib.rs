@@ -34,6 +34,12 @@ enum ProjectStatus {
 }
 
 #[derive(Serial, Deserial, SchemaType)]
+struct UserState {
+    is_curator: bool,
+    is_validator: bool,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
 struct UpdateContractStateParam {
     staking_contract_addr: ContractAddress,
     user_contract_addr: ContractAddress,
@@ -176,12 +182,12 @@ fn contract_curate_project<S: HasStateApi>(
         addr: ctx.sender()
     };
     let func = EntrypointName::new("view_user".into()).unwrap();
-    let user_state = host.invoke_contract_read_only(
+    let user_state: UserState = host.invoke_contract_read_only(
         &state.user_contract_addr,
         &state_params,
         func,
         Amount::zero(),
-    ).unwrap().unwrap();
+    ).unwrap_abort().unwrap_abort().get().unwrap_abort();
     ensure!(user_state.is_curator, Error::InvalidCaller);
 
     state.project.insert(
@@ -215,12 +221,12 @@ fn contract_validate_project<S: HasStateApi>(
         addr: ctx.sender()
     };
     let func = EntrypointName::new("view_user".into()).unwrap();
-    let user_state = host.invoke_contract_read_only(
+    let user_state: UserState = host.invoke_contract_read_only(
         &state.user_contract_addr,
         &state_params,
         func,
         Amount::zero(),
-    ).unwrap().unwrap();
+    ).unwrap_abort().unwrap_abort().get().unwrap_abort();
     ensure!(user_state.is_validator, Error::InvalidCaller);
 
     state.project.insert(
