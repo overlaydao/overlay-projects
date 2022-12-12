@@ -23,7 +23,7 @@ struct ProjectState {
     status: ProjectStatus,
 }
 
-#[derive(Debug, PartialEq, Eq, Reject, Serial, SchemaType)]
+#[derive(Debug, PartialEq, Eq, Reject, Serial, Deserial, SchemaType)]
 enum ProjectStatus {
     Candidate,
     Whitelist,
@@ -94,11 +94,6 @@ struct StartSaleParam {
 #[derive(Serial, Deserial, SchemaType)]
 struct ViewProjectParam {
     project_id: ProjectId,
-}
-
-#[derive(Serial, Deserial, SchemaType)]
-struct AddrParam {
-    addr: Address,
 }
 
 #[derive(Debug, PartialEq, Eq, Reject, Serialize, SchemaType)]
@@ -178,13 +173,10 @@ fn contract_curate_project<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: CureateProjectParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    let state_params = AddrParam {
-        addr: ctx.sender()
-    };
     let func = EntrypointName::new("view_user".into()).unwrap();
-    let user_state: UserState = host.invoke_contract_read_only(
+    let user_state: UserState = host.invoke_contract_raw(
         &state.user_contract_addr,
-        &state_params,
+        Parameter(&ctx.sender()),
         func,
         Amount::zero(),
     ).unwrap_abort().unwrap_abort().get().unwrap_abort();
@@ -217,13 +209,10 @@ fn contract_validate_project<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: ValidateProjectParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    let state_params = AddrParam {
-        addr: ctx.sender()
-    };
     let func = EntrypointName::new("view_user".into()).unwrap();
     let user_state: UserState = host.invoke_contract_read_only(
         &state.user_contract_addr,
-        &state_params,
+        Parameter(&ctx.sender()),
         func,
         Amount::zero(),
     ).unwrap_abort().unwrap_abort().get().unwrap_abort();
