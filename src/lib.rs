@@ -15,6 +15,7 @@ struct State<S> {
 
 #[derive(Serial, Deserial)]
 struct ProjectState {
+    project_uri: Option<String>,
     owners: Option<Vec<AccountAddress>>,
     pub_key: Option<String>,
     token_addr: Option<ContractAddress>,
@@ -53,6 +54,7 @@ struct TransferAdminParam {
 #[derive(Serial, Deserial, SchemaType)]
 struct CureateProjectParam {
     project_id: ProjectId,
+    project_uri: String,
 }
 
 #[derive(Serial, Deserial, SchemaType)]
@@ -172,19 +174,20 @@ fn contract_curate_project<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     let params: CureateProjectParam = ctx.parameter_cursor().get()?;
-    let state = host.state_mut();
     let func = EntrypointName::new("view_user".into()).unwrap();
+    let state = host.state_mut();
     let user_state: UserState = host.invoke_contract_raw(
         &state.user_contract_addr,
-        Parameter(&ctx.sender()),
+        Parameter(&to_bytes(&ctx.sender())),
         func,
         Amount::zero(),
-    ).unwrap_abort().unwrap_abort().get().unwrap_abort();
+    ).unwrap_abort().1.unwrap_abort().get().unwrap_abort();
     ensure!(user_state.is_curator, Error::InvalidCaller);
 
     state.project.insert(
         params.project_id,
         ProjectState {
+            project_uri: Some(params.project_uri),
             owners: None,
             pub_key: None,
             token_addr: None,
@@ -210,17 +213,19 @@ fn contract_validate_project<S: HasStateApi>(
     let params: ValidateProjectParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     let func = EntrypointName::new("view_user".into()).unwrap();
-    let user_state: UserState = host.invoke_contract_read_only(
+    let user_state: UserState = host.invoke_contract_raw(
         &state.user_contract_addr,
-        Parameter(&ctx.sender()),
+        Parameter(&to_bytes(&ctx.sender())),
         func,
         Amount::zero(),
-    ).unwrap_abort().unwrap_abort().get().unwrap_abort();
+    ).unwrap_abort().1.unwrap_abort().get().unwrap_abort();
+    let old_values = state.project.get(&params.project_id).unwrap();
     ensure!(user_state.is_validator, Error::InvalidCaller);
 
     state.project.insert(
         params.project_id,
         ProjectState {
+            project_uri: old_values.project_uri,
             owners: Some(params.owners),
             pub_key: None,
             token_addr: params.token_addr,
@@ -251,6 +256,7 @@ fn contract_add_pub_key<S: HasStateApi>(
     state.project.insert(
         params.project_id,
         ProjectState {
+            project_uri: old_values.project_uri,
             owners: old_values.owners,
             pub_key: Some(params.pub_key),
             token_addr: old_values.token_addr,
@@ -261,6 +267,8 @@ fn contract_add_pub_key<S: HasStateApi>(
     );
     Ok(())
 }
+
+// add_owners
 
 #[receive(
     contract = "overlay-projects",
@@ -281,6 +289,7 @@ fn contract_add_seed_sale<S: HasStateApi>(
     state.project.insert(
         params.project_id,
         ProjectState {
+            project_uri: old_values.project_uri,
             owners: old_values.owners,
             pub_key: old_values.pub_key,
             token_addr: old_values.token_addr,
@@ -305,13 +314,14 @@ fn contract_add_token_addr<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: AddTokenAddrParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    let old_values = state.project.get(&params.project_id).unwrap();
+    let old_values = state.project.get(&params.project_id).unwrap();  // old value なかったときのエラー
     ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
     ensure!(old_values.seed_nft_addr != None, Error::ShouldBeSeedNFT);
 
     state.project.insert(
         params.project_id,
         ProjectState {
+            project_uri: old_values.project_uri,
             owners: old_values.owners,
             pub_key: old_values.pub_key,
             token_addr: Some(params.token_addr),
@@ -342,6 +352,7 @@ fn contract_add_sale<S: HasStateApi>(
     state.project.insert(
         params.project_id,
         ProjectState {
+            project_uri: old_values.project_uri,
             owners: old_values.owners,
             pub_key: old_values.pub_key,
             token_addr: old_values.token_addr,
@@ -371,6 +382,7 @@ fn contract_start_sale<S: HasStateApi>(
     state.project.insert(
         params.project_id,
         ProjectState {
+            project_uri: old_values.project_uri,
             owners: old_values.owners,
             pub_key: old_values.pub_key,
             token_addr: old_values.token_addr,
