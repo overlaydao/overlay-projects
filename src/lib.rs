@@ -29,8 +29,7 @@ enum ProjectStatus {
     Candidate,
     Whitelist,
     OnSale,
-    SaleSucceeded,
-    SaleFailed,
+    SaleClosed,
 }
 
 #[derive(Serial, Deserial, SchemaType)]
@@ -95,6 +94,11 @@ struct AddSaleParam {
 
 #[derive(Serial, Deserial, SchemaType)]
 struct StartSaleParam {
+    project_id: ProjectId,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
+struct CloseSaleParam {
     project_id: ProjectId,
 }
 
@@ -410,6 +414,28 @@ fn contract_start_sale<S: HasStateApi>(
 
     state.project.entry(params.project_id).and_modify(|project_state| {
         project_state.status = ProjectStatus::OnSale;
+    });
+    Ok(())
+}
+
+#[receive(
+    contract = "overlay-projects",
+    name = "close_sale",
+    parameter = "CloseSaleParam",
+    mutable
+)]
+fn contract_close_sale<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    let params: CloseSaleParam = ctx.parameter_cursor().get()?;
+    let state = host.state_mut();
+    let old_values = state.project.get(&params.project_id).unwrap();
+    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
+    ensure!(old_values.status == ProjectStatus::OnSale, Error::InvalidStatus);
+
+    state.project.entry(params.project_id).and_modify(|project_state| {
+        project_state.status = ProjectStatus::SaleClosed;
     });
     Ok(())
 }
