@@ -24,7 +24,7 @@ struct ProjectState {
     status: ProjectStatus,
 }
 
-#[derive(Debug, PartialEq, Eq, Reject, Serial, Deserial, SchemaType)]
+#[derive(Debug, PartialEq, Eq, Reject, Serial, Deserial, SchemaType, Clone)]
 enum ProjectStatus {
     Candidate,
     Whitelist,
@@ -440,6 +440,8 @@ fn contract_close_sale<S: HasStateApi>(
     Ok(())
 }
 
+// upgrade
+
 #[receive(
     contract = "overlay-projects",
     name = "view_admin",
@@ -464,24 +466,22 @@ fn view_admin<S: HasStateApi>(
     parameter = "ViewProjectParam",
     return_value = "ProjectState"
 )]
-fn view_project<'a, S: HasStateApi + 'a>(
-    ctx: &'a impl HasReceiveContext,
-    host: &'a impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<&'a ProjectState> {
+fn view_project<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<ProjectState> {
     let params: ViewProjectParam = ctx.parameter_cursor().get()?;
     let state = host.state();
-    let binding = state.project.get(&params.project_id);
-    let project_state = binding.as_deref().unwrap();
-    Ok(project_state)
-    // Ok(ProjectState {
-    //     owners: project_state.owners,
-    //     project_uri: project_state.project_uri,
-    //     pub_key: project_state.pub_key,
-    //     token_addr: project_state.token_addr,
-    //     seed_nft_addr: project_state.seed_nft_addr,
-    //     sale_addr: project_state.sale_addr,
-    //     status: project_state.status,
-    // })
+    let project_state = state.project.get(&params.project_id).unwrap();
+    Ok(ProjectState {
+        owners: project_state.owners.as_ref().cloned(),
+        project_uri: project_state.project_uri.as_ref().cloned(),
+        pub_key: project_state.pub_key.as_ref().cloned(),
+        token_addr: project_state.token_addr.as_ref().cloned(),
+        seed_nft_addr: project_state.seed_nft_addr.as_ref().cloned(),
+        sale_addr: project_state.sale_addr.as_ref().cloned(),
+        status: project_state.status.clone(),
+    })
 }
 
 #[cfg(test)]
