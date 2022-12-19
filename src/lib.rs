@@ -502,12 +502,12 @@ fn view_project<S: HasStateApi>(
     let state = host.state();
     let project_state = state.project.get(&params.project_id).unwrap();
     Ok(ProjectState {
-        owners: project_state.owners.as_ref().cloned(),
-        project_uri: project_state.project_uri.as_ref().cloned(),
-        pub_key: project_state.pub_key.as_ref().cloned(),
-        token_addr: project_state.token_addr.as_ref().cloned(),
-        seed_nft_addr: project_state.seed_nft_addr.as_ref().cloned(),
-        sale_addr: project_state.sale_addr.as_ref().cloned(),
+        owners: project_state.owners.clone(),
+        project_uri: project_state.project_uri.clone(),
+        pub_key: project_state.pub_key.clone(),
+        token_addr: project_state.token_addr.clone(),
+        seed_nft_addr: project_state.seed_nft_addr.clone(),
+        sale_addr: project_state.sale_addr.clone(),
         status: project_state.status.clone(),
     })
 }
