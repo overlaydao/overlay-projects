@@ -102,6 +102,12 @@ struct CloseSaleParam {
     project_id: ProjectId,
 }
 
+#[derive(Debug, Serialize, SchemaType)]
+struct UpgradeParam {
+    module:  ModuleReference,
+    migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
+}
+
 #[derive(Serial, Deserial, SchemaType)]
 struct ViewProjectParam {
     project_id: ProjectId,
@@ -440,7 +446,29 @@ fn contract_close_sale<S: HasStateApi>(
     Ok(())
 }
 
-// upgrade
+#[receive(
+    contract = "overlay-projects",
+    name = "upgrade",
+    parameter = "UpgradeParam",
+    mutable
+)]
+fn contract_upgrade<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveResult<()> {
+    ensure!(ctx.sender().matches_account(&ctx.owner()));
+    let params: UpgradeParam = ctx.parameter_cursor().get()?;
+    host.upgrade(params.module)?;
+    if let Some((func, parameter)) = params.migrate {
+        host.invoke_contract_raw(
+            &ctx.self_address(),
+            parameter.as_parameter(),
+            func.as_entrypoint_name(),
+            Amount::zero(),
+        )?;
+    }
+    Ok(())
+}
 
 #[receive(
     contract = "overlay-projects",
