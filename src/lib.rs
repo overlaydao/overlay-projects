@@ -16,7 +16,7 @@ struct State<S> {
 #[derive(Serial, Deserial)]
 struct ProjectState {
     project_uri: Option<String>,
-    owners: Option<Vec<AccountAddress>>,
+    owners: Vec<AccountAddress>,
     pub_key: Option<String>,
     token_addr: Option<ContractAddress>,
     seed_nft_addr: Option<ContractAddress>,
@@ -50,9 +50,10 @@ struct TransferAdminParam {
 }
 
 #[derive(Serial, Deserial, SchemaType)]
-struct CureateProjectParam {
+struct CurateProjectParam {
     project_id: ProjectId,
     project_uri: String,
+    owners: Vec<AccountAddress>,
 }
 
 #[derive(Serial, Deserial, SchemaType)]
@@ -104,7 +105,7 @@ struct CloseSaleParam {
 
 #[derive(Debug, Serialize, SchemaType)]
 struct UpgradeParam {
-    module:  ModuleReference,
+    module: ModuleReference,
     migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
 
@@ -126,8 +127,7 @@ enum Error {
     ParseParamsError,
     InvalidCaller,
     InvalidStatus,
-    ShouldBeSeedNFT,
-    ShouldNotBeSeedNFT,
+    ShouldNotBeTON,
 }
 
 type ContractResult<A> = Result<A, Error>;
@@ -160,7 +160,7 @@ fn contract_update_contract_state<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: UpdateContractStateParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
 
     state.staking_contract_addr = params.staking_contract_addr;
     state.user_contract_addr = params.user_contract_addr;
@@ -180,7 +180,7 @@ fn contract_transfer_admin<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: TransferAdminParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
 
     state.admin = params.admin;
     Ok(())
@@ -189,7 +189,7 @@ fn contract_transfer_admin<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "apply_curate_project",
-    parameter = "CureateProjectParam",
+    parameter = "CurateProjectParam",
     mutable,
     error = "Error"
 )]
@@ -197,52 +197,14 @@ fn contract_apply_curate_project<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let params: CureateProjectParam = ctx.parameter_cursor().get()?;
+    let params: CurateProjectParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
     state.project.insert(
         params.project_id,
         ProjectState {
             project_uri: Some(params.project_uri),
-            owners: None,
-            pub_key: None,
-            token_addr: None,
-            seed_nft_addr: None,
-            sale_addr: None,
-            status: ProjectStatus::Candidate,
-        }
-    );
-    Ok(())
-}
-
-#[receive(
-    contract = "overlay-projects",
-    name = "curate_project",
-    parameter = "CureateProjectParam",
-    mutable,
-    error = "Error"
-)]
-fn contract_curate_project<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    let params: CureateProjectParam = ctx.parameter_cursor().get()?;
-    let func = EntrypointName::new("view_user".into()).unwrap();
-    let user_contract_addr = host.state_mut().user_contract_addr;
-    let user_state: UserState = host.invoke_contract_raw(
-        &user_contract_addr,
-        Parameter(&to_bytes(&ctx.sender())),
-        func,
-        Amount::zero(),
-    ).unwrap_abort().1.unwrap_abort().get().unwrap_abort();
-    ensure!(user_state.is_curator, Error::InvalidCaller);
-    
-    let state = host.state_mut();
-    state.project.insert(
-        params.project_id,
-        ProjectState {
-            project_uri: Some(params.project_uri),
-            owners: None,
+            owners: params.owners,
             pub_key: None,
             token_addr: None,
             seed_nft_addr: None,
@@ -255,102 +217,45 @@ fn contract_curate_project<S: HasStateApi>(
 
 #[receive(
     contract = "overlay-projects",
-    name = "validate_project",
-    parameter = "ValidateProjectParam",
+    name = "curate_project",
+    parameter = "CurateProjectParam",
     mutable,
     error = "Error"
 )]
-fn contract_validate_project<S: HasStateApi>(
+fn contract_curate_project<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let params: ValidateProjectParam = ctx.parameter_cursor().get()?;
+    let params: CurateProjectParam = ctx.parameter_cursor().get()?;
     let func = EntrypointName::new("view_user".into()).unwrap();
     let user_contract_addr = host.state_mut().user_contract_addr;
-    let user_state: UserState = host.invoke_contract_raw(
-        &user_contract_addr,
-        Parameter(&to_bytes(&ctx.sender())),
-        func,
-        Amount::zero(),
-    ).unwrap_abort().1.unwrap_abort().get().unwrap_abort();
-    ensure!(user_state.is_validator, Error::InvalidCaller);
+    let user_state: UserState = host
+        .invoke_contract_raw(
+            &user_contract_addr,
+            Parameter(&to_bytes(&ctx.sender())),
+            func,
+            Amount::zero(),
+        )
+        .unwrap_abort()
+        .1
+        .unwrap_abort()
+        .get()
+        .unwrap_abort();
+    ensure!(user_state.is_curator, Error::InvalidCaller);
+
     let state = host.state_mut();
-    let old_values = state.project.get(&params.project_id).unwrap();
-    ensure!(old_values.status == ProjectStatus::Candidate, Error::InvalidStatus);
-
-    state.project.entry(params.project_id).and_modify(|project_state| {
-        project_state.owners = Some(params.owners);
-        project_state.token_addr = params.token_addr;
-        project_state.status = ProjectStatus::Whitelist;
-    });
-    Ok(())
-}
-
-#[receive(
-    contract = "overlay-projects",
-    name = "add_pub_key",
-    parameter = "AddPubKeyParam",
-    mutable,
-    error = "Error"
-)]
-fn contract_add_pub_key<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    let params: AddPubKeyParam = ctx.parameter_cursor().get()?;
-    let state = host.state_mut();
-    let old_values = state.project.get(&params.project_id).unwrap();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
-    ensure!(old_values.status != ProjectStatus::Candidate, Error::InvalidStatus);
-
-    state.project.entry(params.project_id).and_modify(|project_state| {
-        project_state.pub_key = Some(params.pub_key);
-    });
-    Ok(())
-}
-
-#[receive(
-    contract = "overlay-projects",
-    name = "update_owners",
-    parameter = "UpdateOwnersParam",
-    mutable,
-    error = "Error"
-)]
-fn contract_update_owners<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    let params: UpdateOwnersParam = ctx.parameter_cursor().get()?;
-    let state = host.state_mut();
-    let old_values = state.project.get(&params.project_id).unwrap();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
-    ensure!(old_values.status != ProjectStatus::Candidate, Error::InvalidStatus);
-    state.project.entry(params.project_id).and_modify(|project_state| {
-        project_state.owners = Some(params.owners);
-    });
-    Ok(())
-}
-
-#[receive(
-    contract = "overlay-projects",
-    name = "add_seed_sale",
-    parameter = "AddSeedSaleParam",
-    mutable,
-    error = "Error"
-)]
-fn contract_add_seed_sale<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    let params: AddSeedSaleParam = ctx.parameter_cursor().get()?;
-    let state = host.state_mut();
-    let old_values = state.project.get(&params.project_id).unwrap();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
-    ensure!(old_values.status == ProjectStatus::Whitelist, Error::InvalidStatus);
-
-    state.project.entry(params.project_id).and_modify(|project_state| {
-        project_state.seed_nft_addr = Some(params.seed_nft_addr);
-    });
+    state.project.insert(
+        params.project_id,
+        ProjectState {
+            project_uri: Some(params.project_uri),
+            owners: params.owners,
+            pub_key: None,
+            token_addr: None,
+            seed_nft_addr: None,
+            sale_addr: None,
+            status: ProjectStatus::Candidate,
+        },
+    );
     Ok(())
 }
 
@@ -368,13 +273,154 @@ fn contract_add_token_addr<S: HasStateApi>(
     let params: AddTokenAddrParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     let old_values = state.project.get(&params.project_id).unwrap();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
-    ensure!(old_values.status == ProjectStatus::Whitelist, Error::InvalidStatus);
-    ensure!(old_values.seed_nft_addr != None, Error::ShouldBeSeedNFT);
+    ensure!(
+        old_values.owners.contains(&ctx.invoker()),
+        Error::InvalidCaller
+    );
+    ensure!(
+        old_values.status == ProjectStatus::Whitelist && old_values.seed_nft_addr != None,
+        Error::InvalidStatus
+    );
+    ensure!(
+        old_values.status == ProjectStatus::Candidate && old_values.seed_nft_addr == None,
+        Error::InvalidStatus
+    );
 
-    state.project.entry(params.project_id).and_modify(|project_state| {
-        project_state.token_addr = Some(params.token_addr);
-    });
+    state
+        .project
+        .entry(params.project_id)
+        .and_modify(|project_state| {
+            project_state.token_addr = Some(params.token_addr);
+        });
+    Ok(())
+}
+
+#[receive(
+    contract = "overlay-projects",
+    name = "validate_project",
+    parameter = "ValidateProjectParam",
+    mutable,
+    error = "Error"
+)]
+fn contract_validate_project<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    let params: ValidateProjectParam = ctx.parameter_cursor().get()?;
+    let func = EntrypointName::new("view_user".into()).unwrap();
+    let user_contract_addr = host.state_mut().user_contract_addr;
+    let user_state: UserState = host
+        .invoke_contract_raw(
+            &user_contract_addr,
+            Parameter(&to_bytes(&ctx.sender())),
+            func,
+            Amount::zero(),
+        )
+        .unwrap_abort()
+        .1
+        .unwrap_abort()
+        .get()
+        .unwrap_abort();
+    ensure!(user_state.is_validator, Error::InvalidCaller);
+    let state = host.state_mut();
+    let old_values = state.project.get(&params.project_id).unwrap();
+    ensure!(
+        old_values.status == ProjectStatus::Candidate,
+        Error::InvalidStatus
+    );
+
+    state
+        .project
+        .entry(params.project_id)
+        .and_modify(|project_state| {
+            project_state.status = ProjectStatus::Whitelist;
+        });
+    Ok(())
+}
+
+#[receive(
+    contract = "overlay-projects",
+    name = "add_pub_key",
+    parameter = "AddPubKeyParam",
+    mutable,
+    error = "Error"
+)]
+fn contract_add_pub_key<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    let params: AddPubKeyParam = ctx.parameter_cursor().get()?;
+    let state = host.state_mut();
+    let old_values = state.project.get(&params.project_id).unwrap();
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
+    ensure!(
+        old_values.status != ProjectStatus::Candidate,
+        Error::InvalidStatus
+    );
+
+    state
+        .project
+        .entry(params.project_id)
+        .and_modify(|project_state| {
+            project_state.pub_key = Some(params.pub_key);
+        });
+    Ok(())
+}
+
+#[receive(
+    contract = "overlay-projects",
+    name = "update_owners",
+    parameter = "UpdateOwnersParam",
+    mutable,
+    error = "Error"
+)]
+fn contract_update_owners<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    let params: UpdateOwnersParam = ctx.parameter_cursor().get()?;
+    let state = host.state_mut();
+    let old_values = state.project.get(&params.project_id).unwrap();
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
+    ensure!(
+        old_values.status != ProjectStatus::Candidate,
+        Error::InvalidStatus
+    );
+    state
+        .project
+        .entry(params.project_id)
+        .and_modify(|project_state| {
+            project_state.owners = params.owners;
+        });
+    Ok(())
+}
+
+#[receive(
+    contract = "overlay-projects",
+    name = "add_seed_sale",
+    parameter = "AddSeedSaleParam",
+    mutable,
+    error = "Error"
+)]
+fn contract_add_seed_sale<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    let params: AddSeedSaleParam = ctx.parameter_cursor().get()?;
+    let state = host.state_mut();
+    let old_values = state.project.get(&params.project_id).unwrap();
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
+    ensure!(
+        old_values.status == ProjectStatus::Whitelist,
+        Error::InvalidStatus
+    );
+
+    state
+        .project
+        .entry(params.project_id)
+        .and_modify(|project_state| {
+            project_state.seed_nft_addr = Some(params.seed_nft_addr);
+        });
     Ok(())
 }
 
@@ -392,13 +438,19 @@ fn contract_add_sale<S: HasStateApi>(
     let params: AddSaleParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     let old_values = state.project.get(&params.project_id).unwrap();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
-    ensure!(old_values.status == ProjectStatus::Whitelist, Error::InvalidStatus);
-    ensure!(old_values.seed_nft_addr == None, Error::ShouldNotBeSeedNFT);
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
+    ensure!(
+        old_values.status == ProjectStatus::Whitelist,
+        Error::InvalidStatus
+    );
+    ensure!(old_values.seed_nft_addr == None, Error::ShouldNotBeTON);
 
-    state.project.entry(params.project_id).and_modify(|project_state| {
-        project_state.sale_addr = Some(params.sale_addr);
-    });
+    state
+        .project
+        .entry(params.project_id)
+        .and_modify(|project_state| {
+            project_state.sale_addr = Some(params.sale_addr);
+        });
     Ok(())
 }
 
@@ -415,12 +467,18 @@ fn contract_start_sale<S: HasStateApi>(
     let params: StartSaleParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     let old_values = state.project.get(&params.project_id).unwrap();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
-    ensure!(old_values.status == ProjectStatus::Whitelist, Error::InvalidStatus);
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
+    ensure!(
+        old_values.status == ProjectStatus::Whitelist,
+        Error::InvalidStatus
+    );
 
-    state.project.entry(params.project_id).and_modify(|project_state| {
-        project_state.status = ProjectStatus::OnSale;
-    });
+    state
+        .project
+        .entry(params.project_id)
+        .and_modify(|project_state| {
+            project_state.status = ProjectStatus::OnSale;
+        });
     Ok(())
 }
 
@@ -437,12 +495,18 @@ fn contract_close_sale<S: HasStateApi>(
     let params: CloseSaleParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     let old_values = state.project.get(&params.project_id).unwrap();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
-    ensure!(old_values.status == ProjectStatus::OnSale, Error::InvalidStatus);
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
+    ensure!(
+        old_values.status == ProjectStatus::OnSale,
+        Error::InvalidStatus
+    );
 
-    state.project.entry(params.project_id).and_modify(|project_state| {
-        project_state.status = ProjectStatus::SaleClosed;
-    });
+    state
+        .project
+        .entry(params.project_id)
+        .and_modify(|project_state| {
+            project_state.status = ProjectStatus::SaleClosed;
+        });
     Ok(())
 }
 
@@ -477,10 +541,13 @@ fn contract_upgrade<S: HasStateApi>(
 )]
 fn view_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
-    host: &impl  HasHost<State<S>, StateApiType = S>,
+    host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ViewAdminRes> {
     let state = host.state();
-    ensure!(ctx.sender() == Address::Account(host.state().admin), Error::InvalidCaller);
+    ensure!(
+        ctx.sender() == Address::Account(host.state().admin),
+        Error::InvalidCaller
+    );
     Ok(ViewAdminRes {
         admin: state.admin,
         staking_contract_addr: state.staking_contract_addr,
