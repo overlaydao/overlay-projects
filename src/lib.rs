@@ -13,7 +13,7 @@ struct State<S> {
     project: StateMap<ProjectId, ProjectState, S>,
 }
 
-#[derive(Serial, Deserial)]
+#[derive(Serial, Deserial, SchemaType)]
 struct ProjectState {
     project_uri: Option<String>,
     owners: Vec<AccountAddress>,
@@ -132,7 +132,7 @@ enum Error {
 
 type ContractResult<A> = Result<A, Error>;
 
-#[init(contract = "overlay-projects", parameter = "InitParams")]
+#[init(contract = "overlay-projects", parameter = "UpdateContractStateParam")]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
@@ -261,42 +261,6 @@ fn contract_curate_project<S: HasStateApi>(
 
 #[receive(
     contract = "overlay-projects",
-    name = "add_token_addr",
-    parameter = "AddTokenAddrParam",
-    mutable,
-    error = "Error"
-)]
-fn contract_add_token_addr<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
-    let params: AddTokenAddrParam = ctx.parameter_cursor().get()?;
-    let state = host.state_mut();
-    let old_values = state.project.get(&params.project_id).unwrap();
-    ensure!(
-        old_values.owners.contains(&ctx.invoker()),
-        Error::InvalidCaller
-    );
-    ensure!(
-        old_values.status == ProjectStatus::Whitelist && old_values.seed_nft_addr != None,
-        Error::InvalidStatus
-    );
-    ensure!(
-        old_values.status == ProjectStatus::Candidate && old_values.seed_nft_addr == None,
-        Error::InvalidStatus
-    );
-
-    state
-        .project
-        .entry(params.project_id)
-        .and_modify(|project_state| {
-            project_state.token_addr = Some(params.token_addr);
-        });
-    Ok(())
-}
-
-#[receive(
-    contract = "overlay-projects",
     name = "validate_project",
     parameter = "ValidateProjectParam",
     mutable,
@@ -334,6 +298,42 @@ fn contract_validate_project<S: HasStateApi>(
         .entry(params.project_id)
         .and_modify(|project_state| {
             project_state.status = ProjectStatus::Whitelist;
+        });
+    Ok(())
+}
+
+#[receive(
+    contract = "overlay-projects",
+    name = "add_token_addr",
+    parameter = "AddTokenAddrParam",
+    mutable,
+    error = "Error"
+)]
+fn contract_add_token_addr<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    let params: AddTokenAddrParam = ctx.parameter_cursor().get()?;
+    let state = host.state_mut();
+    let old_values = state.project.get(&params.project_id).unwrap();
+    ensure!(
+        old_values.owners.contains(&ctx.invoker()),
+        Error::InvalidCaller
+    );
+    ensure!(
+        old_values.status == ProjectStatus::Whitelist && old_values.seed_nft_addr != None,
+        Error::InvalidStatus
+    );
+    ensure!(
+        old_values.status == ProjectStatus::Candidate && old_values.seed_nft_addr == None,
+        Error::InvalidStatus
+    );
+
+    state
+        .project
+        .entry(params.project_id)
+        .and_modify(|project_state| {
+            project_state.token_addr = Some(params.token_addr);
         });
     Ok(())
 }
