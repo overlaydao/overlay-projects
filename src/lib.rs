@@ -50,6 +50,18 @@ struct TransferAdminParam {
 }
 
 #[derive(Serial, Deserial, SchemaType)]
+struct CurateParam {
+    addr: AccountAddress,
+    project_id: ProjectId,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
+struct ValidateParam {
+    addr: AccountAddress,
+    project_id: ProjectId,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
 struct CurateProjectParam {
     project_id: ProjectId,
     project_uri: String,
@@ -245,7 +257,7 @@ fn contract_curate_project<S: HasStateApi>(
 
     let state = host.state_mut();
     state.project.insert(
-        params.project_id,
+        params.project_id.clone(),
         ProjectState {
             project_uri: Some(params.project_uri),
             owners: params.owners,
@@ -256,6 +268,19 @@ fn contract_curate_project<S: HasStateApi>(
             status: ProjectStatus::Candidate,
         },
     );
+
+    let func = EntrypointName::new("curate".into()).unwrap();
+    let curate_param = CurateParam {
+        addr: ctx.invoker(),
+        project_id: params.project_id.clone(),
+    };
+    host.invoke_contract_raw(
+        &user_contract_addr,
+        Parameter(&to_bytes(&curate_param)),
+        func,
+        Amount::zero(),
+    )
+    .unwrap_abort();
     Ok(())
 }
 
@@ -295,10 +320,23 @@ fn contract_validate_project<S: HasStateApi>(
 
     state
         .project
-        .entry(params.project_id)
+        .entry(params.project_id.clone())
         .and_modify(|project_state| {
             project_state.status = ProjectStatus::Whitelist;
         });
+
+    let func = EntrypointName::new("validate".into()).unwrap();
+    let validate_param = ValidateParam {
+        addr: ctx.invoker(),
+        project_id: params.project_id.clone(),
+    };
+    host.invoke_contract_raw(
+        &user_contract_addr,
+        Parameter(&to_bytes(&validate_param)),
+        func,
+        Amount::zero(),
+    )
+    .unwrap_abort();
     Ok(())
 }
 
