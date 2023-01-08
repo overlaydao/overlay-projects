@@ -577,7 +577,7 @@ fn contract_upgrade<S: HasStateApi>(
     name = "view_admin",
     return_value = "ViewAdminRes"
 )]
-fn view_admin<S: HasStateApi>(
+fn contract_view_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ViewAdminRes> {
@@ -599,7 +599,7 @@ fn view_admin<S: HasStateApi>(
     parameter = "ViewProjectParam",
     return_value = "ProjectState"
 )]
-fn view_project<S: HasStateApi>(
+fn contract_view_project<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ProjectState> {
@@ -624,7 +624,7 @@ type ViewProjectsResponse = Vec<(ProjectId, ProjectState)>;
     name = "view_projects",
     return_value = "ViewProjectsResponse"
 )]
-fn view_projects<S: HasStateApi>(
+fn contract_view_projects<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ViewProjectsResponse> {
@@ -646,7 +646,7 @@ type ViewProjectIdsResponse = Vec<ProjectId>;
     name = "view_project_ids",
     return_value = "ViewProjectIdsResponse"
 )]
-fn view_project_ids<S: HasStateApi>(
+fn contract_view_project_ids<S: HasStateApi>(
     _ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ViewProjectIdsResponse> {
