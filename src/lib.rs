@@ -13,7 +13,7 @@ struct State<S> {
     project: StateMap<ProjectId, ProjectState, S>,
 }
 
-#[derive(Serial, Deserial, SchemaType)]
+#[derive(Serial, Deserial, SchemaType, Clone)]
 struct ProjectState {
     project_uri: Option<String>,
     owners: Vec<AccountAddress>,
@@ -577,7 +577,7 @@ fn contract_upgrade<S: HasStateApi>(
     name = "view_admin",
     return_value = "ViewAdminRes"
 )]
-fn view_admin<S: HasStateApi>(
+fn contract_view_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ViewAdminRes> {
@@ -599,7 +599,7 @@ fn view_admin<S: HasStateApi>(
     parameter = "ViewProjectParam",
     return_value = "ProjectState"
 )]
-fn view_project<S: HasStateApi>(
+fn contract_view_project<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ProjectState> {
@@ -615,6 +615,47 @@ fn view_project<S: HasStateApi>(
         sale_addr: project_state.sale_addr.clone(),
         status: project_state.status.clone(),
     })
+}
+
+type ViewProjectsResponse = Vec<(ProjectId, ProjectState)>;
+
+#[receive(
+    contract = "overlay-projects",
+    name = "view_projects",
+    return_value = "ViewProjectsResponse"
+)]
+fn contract_view_projects<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<ViewProjectsResponse> {
+    let projects_state = &host.state().project;
+    let mut projects_state_response: ViewProjectsResponse = Vec::new();
+    for (project_id, project_state) in projects_state.iter() {
+        projects_state_response.push((
+            project_id.clone(),
+            project_state.clone()
+        ));
+    }
+    Ok(projects_state_response)
+}
+
+type ViewProjectIdsResponse = Vec<ProjectId>;
+
+#[receive(
+    contract = "overlay-projects",
+    name = "view_project_ids",
+    return_value = "ViewProjectIdsResponse"
+)]
+fn contract_view_project_ids<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<ViewProjectIdsResponse> {
+    let projects_state = &host.state().project;
+    let mut project_ids_response: ViewProjectIdsResponse = Vec::new();
+    for (project_id, _project_state) in projects_state.iter() {
+        project_ids_response.push(project_id.clone());
+    }
+    Ok(project_ids_response)
 }
 
 #[cfg(test)]
