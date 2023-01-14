@@ -33,12 +33,6 @@ enum ProjectStatus {
 }
 
 #[derive(Serial, Deserial, SchemaType)]
-struct UserState {
-    is_curator: bool,
-    is_validator: bool,
-}
-
-#[derive(Serial, Deserial, SchemaType)]
 struct UserStateResponse {
     is_curator: bool,
     is_validator: bool,
@@ -277,9 +271,7 @@ fn contract_curate_project<S: HasStateApi>(
     ensure!(user_state.is_curator, Error::InvalidCaller);
 
     let state = host.state_mut();
-    state.project.insert(
-        params.project_id.clone(),
-        ProjectState {
+    state.project.entry(params.project_id.clone()).or_insert_with(|| ProjectState {
             project_uri: Some(params.project_uri),
             owners: params.owners,
             pub_key: None,
@@ -322,19 +314,25 @@ fn contract_validate_project<S: HasStateApi>(
     let params: ValidateProjectParam = ctx.parameter_cursor().get()?;
     let func = EntrypointName::new("view_user".into()).unwrap();
     let user_contract_addr = host.state_mut().user_contract_addr;
-    let user_state: UserState = host
-        .invoke_contract_raw(
+
+    let sender_account = match ctx.sender() {
+        Address::Contract(_) => bail!(Error::OnlyAccount),
+        Address::Account(account_address) => account_address,
+    };
+
+    let view_user_params = AddrParam {
+        addr: sender_account,
+    };
+    let user_state: UserStateResponse = host
+        .invoke_contract_read_only(
             &user_contract_addr,
-            Parameter(&to_bytes(&ctx.sender())),
+            &view_user_params,
             func,
             Amount::zero(),
-        )
-        .unwrap_abort()
-        .1
-        .unwrap_abort()
-        .get()
-        .unwrap_abort();
+        ).unwrap().ok_or(Error::FailedInvokeUserContractView)?.get()?;
+
     ensure!(user_state.is_validator, Error::InvalidCaller);
+
     let state = host.state_mut();
     let old_values = state.project.get(&params.project_id).unwrap();
     ensure!(
@@ -351,17 +349,20 @@ fn contract_validate_project<S: HasStateApi>(
 
     let func = EntrypointName::new("validate".into()).unwrap();
     let validate_param = ValidateParam {
-        addr: ctx.invoker(),
+        addr: sender_account,
         project_id: params.project_id.clone(),
     };
-    host.invoke_contract_raw(
+    let result = host.invoke_contract(
         &user_contract_addr,
-        Parameter(&to_bytes(&validate_param)),
+        &validate_param,
         func,
         Amount::zero(),
-    )
-    .unwrap_abort();
-    Ok(())
+    );
+
+    match result {
+        Ok((_, _)) => Ok(()),
+        Err(_) => Err(Error::FailedInvokeUserContract),
+    }
 }
 
 #[receive(
