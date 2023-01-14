@@ -39,6 +39,14 @@ struct UserState {
 }
 
 #[derive(Serial, Deserial, SchemaType)]
+struct UserStateResponse {
+    is_curator: bool,
+    is_validator: bool,
+    curated_projects: Vec<ProjectId>,
+    validated_projects: Vec<ProjectId>,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
 struct UpdateContractStateParam {
     staking_contract_addr: ContractAddress,
     user_contract_addr: ContractAddress,
@@ -133,6 +141,11 @@ struct ViewAdminRes {
     user_contract_addr: ContractAddress,
 }
 
+#[derive(Serial, Deserial, SchemaType)]
+struct AddrParam {
+    addr: AccountAddress,
+}
+
 #[derive(Debug, PartialEq, Eq, Reject, Serialize, SchemaType)]
 enum Error {
     #[from(ParseError)]
@@ -140,6 +153,9 @@ enum Error {
     InvalidCaller,
     InvalidStatus,
     ShouldNotBeTON,
+    OnlyAccount,
+    FailedInvokeUserContract,
+    FailedInvokeUserContractView
 }
 
 type ContractResult<A> = Result<A, Error>;
@@ -239,20 +255,25 @@ fn contract_curate_project<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     let params: CurateProjectParam = ctx.parameter_cursor().get()?;
-    let func = EntrypointName::new("view_user".into()).unwrap();
+    let func = EntrypointName::new_unchecked("view_user");
     let user_contract_addr = host.state_mut().user_contract_addr;
-    let user_state: UserState = host
-        .invoke_contract_raw(
+
+    let sender_account = match ctx.sender() {
+        Address::Contract(_) => bail!(Error::OnlyAccount),
+        Address::Account(account_address) => account_address,
+    };
+
+    let view_user_params = AddrParam {
+        addr: sender_account,
+    };
+    let user_state: UserStateResponse = host
+        .invoke_contract_read_only(
             &user_contract_addr,
-            Parameter(&to_bytes(&ctx.sender())),
+            &view_user_params,
             func,
             Amount::zero(),
-        )
-        .unwrap_abort()
-        .1
-        .unwrap_abort()
-        .get()
-        .unwrap_abort();
+        ).unwrap().ok_or(Error::FailedInvokeUserContractView)?.get()?;
+
     ensure!(user_state.is_curator, Error::InvalidCaller);
 
     let state = host.state_mut();
@@ -271,17 +292,20 @@ fn contract_curate_project<S: HasStateApi>(
 
     let func = EntrypointName::new("curate".into()).unwrap();
     let curate_param = CurateParam {
-        addr: ctx.invoker(),
-        project_id: params.project_id.clone(),
+        addr: sender_account,
+        project_id: params.project_id,
     };
-    host.invoke_contract_raw(
+    let result = host.invoke_contract(
         &user_contract_addr,
-        Parameter(&to_bytes(&curate_param)),
+        &curate_param,
         func,
         Amount::zero(),
-    )
-    .unwrap_abort();
-    Ok(())
+    );
+
+    match result {
+        Ok((_, _)) => Ok(()),
+        Err(_) => Err(Error::FailedInvokeUserContract),
+    }
 }
 
 #[receive(
