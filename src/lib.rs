@@ -350,7 +350,7 @@ fn contract_validate_project<S: HasStateApi>(
     let func = EntrypointName::new("validate".into()).unwrap();
     let validate_param = ValidateParam {
         addr: sender_account,
-        project_id: params.project_id.clone(),
+        project_id: params.project_id,
     };
     let result = host.invoke_contract(
         &user_contract_addr,
