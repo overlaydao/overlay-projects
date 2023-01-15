@@ -384,11 +384,8 @@ fn contract_add_token_addr<S: HasStateApi>(
         Error::InvalidCaller
     );
     ensure!(
-        old_values.status == ProjectStatus::Whitelist && old_values.seed_nft_addr != None,
-        Error::InvalidStatus
-    );
-    ensure!(
-        old_values.status == ProjectStatus::Candidate && old_values.seed_nft_addr == None,
+        (old_values.status == ProjectStatus::Whitelist && old_values.seed_nft_addr != None) ||
+        (old_values.status == ProjectStatus::Candidate && old_values.seed_nft_addr == None),
         Error::InvalidStatus
     );
 
