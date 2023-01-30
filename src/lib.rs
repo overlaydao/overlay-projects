@@ -71,7 +71,23 @@ struct CurateProjectParam {
 }
 
 #[derive(Serial, Deserial, SchemaType)]
+struct CurateProjectAdminParam {
+    curator: AccountAddress,
+    project_id: ProjectId,
+    project_uri: String,
+    owners: Vec<AccountAddress>,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
 struct ValidateProjectParam {
+    project_id: ProjectId,
+    owners: Vec<AccountAddress>,
+    token_addr: Option<ContractAddress>,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
+struct ValidateProjectAdminParam {
+    validator: AccountAddress,
     project_id: ProjectId,
     owners: Vec<AccountAddress>,
     token_addr: Option<ContractAddress>,
@@ -302,6 +318,66 @@ fn contract_curate_project<S: HasStateApi>(
 
 #[receive(
     contract = "overlay-projects",
+    name = "curate_project_admin",
+    parameter = "CurateProjectAdminParam",
+    mutable,
+    error = "Error"
+)]
+fn contract_curate_project_admin<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    let params: CurateProjectAdminParam = ctx.parameter_cursor().get()?;
+    let func = EntrypointName::new_unchecked("view_user");
+    let user_contract_addr = host.state_mut().user_contract_addr;
+
+    ensure!(ctx.invoker() == host.state().admin, Error::InvalidCaller);
+
+    let view_user_params = AddrParam {
+        addr: params.curator,
+    };
+    let user_state: UserStateResponse = host
+        .invoke_contract_read_only(
+            &user_contract_addr,
+            &view_user_params,
+            func,
+            Amount::zero(),
+        ).unwrap().ok_or(Error::FailedInvokeUserContractView)?.get()?;
+
+    ensure!(user_state.is_curator, Error::InvalidCaller);
+
+    let state = host.state_mut();
+    state.project.entry(params.project_id.clone()).or_insert_with(|| ProjectState {
+            project_uri: Some(params.project_uri),
+            owners: params.owners,
+            pub_key: None,
+            token_addr: None,
+            seed_nft_addr: None,
+            sale_addr: None,
+            status: ProjectStatus::Candidate,
+        },
+    );
+
+    let func = EntrypointName::new("curate".into()).unwrap();
+    let curate_param = CurateParam {
+        addr: params.curator,
+        project_id: params.project_id,
+    };
+    let result = host.invoke_contract(
+        &user_contract_addr,
+        &curate_param,
+        func,
+        Amount::zero(),
+    );
+
+    match result {
+        Ok((_, _)) => Ok(()),
+        Err(_) => Err(Error::FailedInvokeUserContract),
+    }
+}
+
+#[receive(
+    contract = "overlay-projects",
     name = "validate_project",
     parameter = "ValidateProjectParam",
     mutable,
@@ -350,6 +426,68 @@ fn contract_validate_project<S: HasStateApi>(
     let func = EntrypointName::new("validate".into()).unwrap();
     let validate_param = ValidateParam {
         addr: sender_account,
+        project_id: params.project_id,
+    };
+    let result = host.invoke_contract(
+        &user_contract_addr,
+        &validate_param,
+        func,
+        Amount::zero(),
+    );
+
+    match result {
+        Ok((_, _)) => Ok(()),
+        Err(_) => Err(Error::FailedInvokeUserContract),
+    }
+}
+
+#[receive(
+    contract = "overlay-projects",
+    name = "validate_project_admin",
+    parameter = "ValidateProjectAdminParam",
+    mutable,
+    error = "Error"
+)]
+fn contract_validate_project_admin<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<()> {
+    let params: ValidateProjectAdminParam = ctx.parameter_cursor().get()?;
+    let func = EntrypointName::new("view_user".into()).unwrap();
+    let user_contract_addr = host.state_mut().user_contract_addr;
+
+    ensure!(ctx.invoker() == host.state().admin, Error::InvalidCaller);
+
+    let view_user_params = AddrParam {
+        addr: params.validator,
+    };
+    let user_state: UserStateResponse = host
+        .invoke_contract_read_only(
+            &user_contract_addr,
+            &view_user_params,
+            func,
+            Amount::zero(),
+        ).unwrap().ok_or(Error::FailedInvokeUserContractView)?.get()?;
+
+    ensure!(user_state.is_validator, Error::InvalidCaller);
+
+    let state = host.state_mut();
+    let old_values = state.project.get(&params.project_id).unwrap();
+    ensure!(
+        old_values.status == ProjectStatus::Candidate,
+        Error::InvalidStatus
+    );
+
+    state
+        .project
+        .entry(params.project_id.clone())
+        .and_modify(|project_state| {
+            project_state.status = ProjectStatus::Whitelist;
+        });
+
+    let func = EntrypointName::new("validate".into()).unwrap();
+    let validate_param = ValidateParam {
+        addr: params.validator,
         project_id: params.project_id,
     };
     let result = host.invoke_contract(
