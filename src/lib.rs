@@ -357,23 +357,7 @@ fn contract_curate_project_admin<S: HasStateApi>(
             status: ProjectStatus::Candidate,
         },
     );
-
-    let func = EntrypointName::new("curate".into()).unwrap();
-    let curate_param = CurateParam {
-        addr: params.curator,
-        project_id: params.project_id,
-    };
-    let result = host.invoke_contract(
-        &user_contract_addr,
-        &curate_param,
-        func,
-        Amount::zero(),
-    );
-
-    match result {
-        Ok((_, _)) => Ok(()),
-        Err(_) => Err(Error::FailedInvokeUserContract),
-    }
+    Ok(())
 }
 
 #[receive(
@@ -485,22 +469,7 @@ fn contract_validate_project_admin<S: HasStateApi>(
             project_state.status = ProjectStatus::Whitelist;
         });
 
-    let func = EntrypointName::new("validate".into()).unwrap();
-    let validate_param = ValidateParam {
-        addr: params.validator,
-        project_id: params.project_id,
-    };
-    let result = host.invoke_contract(
-        &user_contract_addr,
-        &validate_param,
-        func,
-        Amount::zero(),
-    );
-
-    match result {
-        Ok((_, _)) => Ok(()),
-        Err(_) => Err(Error::FailedInvokeUserContract),
-    }
+    Ok(())
 }
 
 #[receive(
