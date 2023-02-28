@@ -4,7 +4,7 @@ use core::fmt::Debug;
 
 type ProjectId = String;
 
-#[derive(Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     admin: AccountAddress,
@@ -787,11 +787,122 @@ fn contract_view_project_ids<S: HasStateApi>(
     Ok(project_ids_response)
 }
 
-#[cfg(test)]
+#[concordium_cfg_test]
 mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
+    use super::*;
+    use test_infrastructure::*;
+
+    const ADMIN_ACCOUNT: AccountAddress = AccountAddress([1u8; 32]);
+    const ADMIN_ADDRESS: Address = Address::Account(ADMIN_ACCOUNT);
+    const CURATOR_ACCOUNT: AccountAddress = AccountAddress([2u8; 32]);
+    const CURATOR_ADDRESS: Address = Address::Account(CURATOR_ACCOUNT);
+    const VALIDATOR_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
+    const VALIDATOR_ADDRESS: Address = Address::Account(VALIDATOR_ACCOUNT);
+    const PROJECT_OWNER_ACCOUNT: AccountAddress = AccountAddress([4u8; 32]);
+    const PROJECT_OWNER_ADDRESS: Address = Address::Account(PROJECT_OWNER_ACCOUNT);
+    const USER1_ACCOUNT: AccountAddress = AccountAddress([5u8; 32]);
+    const USER1_ADDRESS: Address = Address::Account(USER1_ACCOUNT);
+    const USER2_ACCOUNT: AccountAddress = AccountAddress([6u8; 32]);
+    const USER2_ADDRESS: Address = Address::Account(USER2_ACCOUNT);
+
+    fn init_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
+        let state = State {
+            admin: ADMIN_ACCOUNT,
+            staking_contract_addr: ContractAddress::new(1000, 0),
+            user_contract_addr: ContractAddress::new(1001, 0),
+            project: state_builder.new_map(),
+        };
+        state
     }
+
+    #[concordium_test]
+    fn test_init() {
+        let mut ctx = TestInitContext::empty();
+        let mut state_builder = TestStateBuilder::new();
+        ctx.set_init_origin(ADMIN_ACCOUNT);
+
+        let params = UpdateContractStateParam {
+            staking_contract_addr: ContractAddress::new(1000, 0),
+            user_contract_addr: ContractAddress::new(1001, 0),
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        let init_result = contract_init(&ctx, &mut state_builder);
+        let state = init_result.expect_report("test_init: Contract Init Failed.");
+        claim_eq!(
+            state.staking_contract_addr,
+            ContractAddress::new(1000, 0),
+            "test_init: staking_contract_addr init failed."
+        );
+        claim_eq!(
+            state.user_contract_addr,
+            ContractAddress::new(1001, 0),
+            "test_init: user_contract_addr init failed."
+        );
+    }
+
+    #[concordium_test]
+    fn test_contract_udpate_contract_state_with_rollback() {
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(USER1_ACCOUNT);
+        let mut state_builder = TestStateBuilder::new();
+        let initial_state = init_state(&mut state_builder);
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        let params = UpdateContractStateParam {
+            staking_contract_addr: ContractAddress::new(2000, 0),
+            user_contract_addr: ContractAddress::new(2001, 0),
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        let _ = host.with_rollback(|host| contract_update_contract_state(&ctx, host));
+        let state = host.state();
+        claim_eq!(
+            state.staking_contract_addr,
+            ContractAddress::new(1000, 0),
+            "test_contract_udpate_contract_state_with_rollback: an user can update staking_contract_addr."
+        );
+        claim_eq!(
+            state.user_contract_addr,
+            ContractAddress::new(1001, 0),
+            "test_contract_udpate_contract_state_with_rollback: an user can update user_contract_addr"
+        );
+    }
+
+    #[concordium_test]
+    fn test_contract_update_contract_state() {
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(ADMIN_ACCOUNT);
+        let mut state_builder = TestStateBuilder::new();
+        let initial_state = init_state(&mut state_builder);
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        let params = UpdateContractStateParam {
+            staking_contract_addr: ContractAddress::new(2000, 0),
+            user_contract_addr: ContractAddress::new(2001, 0),
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        let result: ContractResult<()> = contract_update_contract_state(&ctx, &mut host);
+        claim!(result.is_ok(), "test_contract_update_contract_state: Results in rejection");
+        let state = host.state();
+        claim_eq!(
+            state.staking_contract_addr,
+            ContractAddress::new(2000, 0),
+            "test_contract_update_contract_state: staking_contract_addr update failed."
+        );
+        claim_eq!(
+            state.user_contract_addr,
+            ContractAddress::new(2001, 0),
+            "test_contract_update_contract_state: user_contract_addr update failed."
+        );
+    }
+
+    // #[concordium_test]
+    // fn test_contract_transfer_admin() {
+    //     let mut ctx = TestReceiveContext::empty();
+    //     ctx.set_invoker(ADMIN_ACCOUNT);
+    //     let mut 
+    // }
 }
