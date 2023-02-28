@@ -793,17 +793,21 @@ mod tests {
     use test_infrastructure::*;
 
     const ADMIN_ACCOUNT: AccountAddress = AccountAddress([1u8; 32]);
-    const ADMIN_ADDRESS: Address = Address::Account(ADMIN_ACCOUNT);
-    const CURATOR_ACCOUNT: AccountAddress = AccountAddress([2u8; 32]);
-    const CURATOR_ADDRESS: Address = Address::Account(CURATOR_ACCOUNT);
-    const VALIDATOR_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
-    const VALIDATOR_ADDRESS: Address = Address::Account(VALIDATOR_ACCOUNT);
-    const PROJECT_OWNER_ACCOUNT: AccountAddress = AccountAddress([4u8; 32]);
-    const PROJECT_OWNER_ADDRESS: Address = Address::Account(PROJECT_OWNER_ACCOUNT);
-    const USER1_ACCOUNT: AccountAddress = AccountAddress([5u8; 32]);
-    const USER1_ADDRESS: Address = Address::Account(USER1_ACCOUNT);
-    const USER2_ACCOUNT: AccountAddress = AccountAddress([6u8; 32]);
-    const USER2_ADDRESS: Address = Address::Account(USER2_ACCOUNT);
+    // const ADMIN_ADDRESS: Address = Address::Account(ADMIN_ACCOUNT);
+    const ADMIN2_ACCOUNT: AccountAddress = AccountAddress([2u8; 32]);
+    // const ADMIN2_ADDRESS: Address = Address::Account(ADMIN_ACCOUNT);
+    const CURATOR_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
+    // const CURATOR_ADDRESS: Address = Address::Account(CURATOR_ACCOUNT);
+    const VALIDATOR_ACCOUNT: AccountAddress = AccountAddress([4u8; 32]);
+    // const VALIDATOR_ADDRESS: Address = Address::Account(VALIDATOR_ACCOUNT);
+    const PROJECT_OWNER1_ACCOUNT: AccountAddress = AccountAddress([5u8; 32]);
+    // const PROJECT_OWNER1_ADDRESS: Address = Address::Account(PROJECT_OWNER_ACCOUNT);
+    const PROJECT_OWNER2_ACCOUNT: AccountAddress = AccountAddress([6u8; 32]);
+    // const PROJECT_OWNER2_ADDRESS: Address = Address::Account(PROJECT_OWNER_ACCOUNT);
+    const USER1_ACCOUNT: AccountAddress = AccountAddress([7u8; 32]);
+    // const USER1_ADDRESS: Address = Address::Account(USER1_ACCOUNT);
+    const USER2_ACCOUNT: AccountAddress = AccountAddress([8u8; 32]);
+    // const USER2_ADDRESS: Address = Address::Account(USER2_ACCOUNT);
 
     fn init_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
         let state = State {
@@ -830,6 +834,11 @@ mod tests {
 
         let init_result = contract_init(&ctx, &mut state_builder);
         let state = init_result.expect_report("test_init: Contract Init Failed.");
+        claim_eq!(
+            state.admin,
+            ADMIN_ACCOUNT,
+            "test_init: admin init failed."
+        );
         claim_eq!(
             state.staking_contract_addr,
             ContractAddress::new(1000, 0),
@@ -899,10 +908,123 @@ mod tests {
         );
     }
 
-    // #[concordium_test]
-    // fn test_contract_transfer_admin() {
-    //     let mut ctx = TestReceiveContext::empty();
-    //     ctx.set_invoker(ADMIN_ACCOUNT);
-    //     let mut 
-    // }
+    #[concordium_test]
+    fn test_contract_transfer_admin_with_rollback() {
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(USER2_ACCOUNT);
+        let mut state_builder = TestStateBuilder::new();
+        let initial_state = init_state(&mut state_builder);
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        let params = TransferAdminParam {
+            admin: USER2_ACCOUNT
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        let _ = host.with_rollback(|host| contract_transfer_admin(&ctx, host));
+        let state = host.state();
+        claim_eq!(
+            state.admin,
+            ADMIN_ACCOUNT,
+            "test_contract_transfer_admin_with_rollback: an user can update admin."
+        );
+    }
+
+    #[concordium_test]
+    fn test_contract_transfer_admin() {
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(ADMIN_ACCOUNT);
+        let mut state_builder = TestStateBuilder::new();
+        let initial_state = init_state(&mut state_builder);
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        let params = TransferAdminParam {
+            admin: ADMIN2_ACCOUNT
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        let result: ContractResult<()> = contract_transfer_admin(&ctx, &mut host);
+        claim!(result.is_ok(), "test_contract_transfer_admin: Results in rejection");
+        let state =  host.state();
+        claim_eq!(
+            state.admin,
+            ADMIN2_ACCOUNT,
+            "test_contract_transfer_admin: admin update failed."
+        )
+    }
+
+    #[concordium_test]
+    fn test_contract_apply_curate_project_with_rollback() {
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(USER1_ACCOUNT);
+        let mut state_builder = TestStateBuilder::new();
+        let initial_state = init_state(&mut state_builder);
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        let params = CurateProjectParam {
+            project_id: "DLSFJJ&&X87877XJJN".to_string(),
+            project_uri: "somethingdangerous".to_string(),
+            owners: vec![USER1_ACCOUNT, USER2_ACCOUNT]
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        let _ = host.with_rollback(|host| contract_apply_curate_project(&ctx, host));
+        let state = host.state();
+        claim!(state.project.is_empty(), "test_contract_apply_curate_project_with_rollback: an user can call self apply.")
+    }
+
+    #[concordium_test]
+    fn test_contract_apply_curate_project() {
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(ADMIN_ACCOUNT);
+        let mut state_builder = TestStateBuilder::new();
+        let initial_state = init_state(&mut state_builder);
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        let params = CurateProjectParam {
+            project_id: "DLSFJJ&&X87877XJJK".to_string(),
+            project_uri: "https://overlay.global/".to_string(),
+            owners: vec![PROJECT_OWNER1_ACCOUNT, PROJECT_OWNER2_ACCOUNT]
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        let result: ContractResult<()> = contract_apply_curate_project(&ctx, &mut host);
+        claim!(result.is_ok(), "contract_apply_curate_project: Results in rejection.");
+        let project_state = host.state().project.get(&"DLSFJJ&&X87877XJJK".to_string()).unwrap();
+        claim_eq!(
+            project_state.project_uri,
+            Some("https://overlay.global/".to_string()),
+            "contract_apply_curate_project: project_uri update failed."
+        );
+        claim_eq!(
+            project_state.owners,
+            vec![PROJECT_OWNER1_ACCOUNT, PROJECT_OWNER2_ACCOUNT],
+            "contract_apply_curate_project: owners update failed."
+        );
+        claim_eq!(
+            project_state.pub_key,
+            None,
+            "contract_apply_curate_project: pub_key update failed."
+        );
+        claim_eq!(
+            project_state.token_addr,
+            None,
+            "contract_apply_curate_project: token_addr update failed."
+        );
+        claim_eq!(
+            project_state.seed_nft_addr,
+            None,
+            "contract_apply_curate_project: seed_nft_addr update failed."
+        );
+        claim_eq!(
+            project_state.sale_addr,
+            None,
+            "contract_apply_curate_project: sale_addr update failed"
+        );
+        claim_eq!(
+            project_state.status,
+            ProjectStatus::Candidate,
+            "contract_apply_curate_project: status update failed."
+        );
+    }
 }
