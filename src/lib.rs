@@ -32,7 +32,7 @@ enum ProjectStatus {
     SaleClosed,
 }
 
-#[derive(Serial, Deserial, SchemaType)]
+#[derive(Serial, Deserial, SchemaType, Clone)]
 struct UserStateResponse {
     is_curator: bool,
     is_validator: bool,
@@ -797,7 +797,7 @@ mod tests {
     const ADMIN2_ACCOUNT: AccountAddress = AccountAddress([2u8; 32]);
     // const ADMIN2_ADDRESS: Address = Address::Account(ADMIN_ACCOUNT);
     const CURATOR_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
-    // const CURATOR_ADDRESS: Address = Address::Account(CURATOR_ACCOUNT);
+    const CURATOR_ADDRESS: Address = Address::Account(CURATOR_ACCOUNT);
     const VALIDATOR_ACCOUNT: AccountAddress = AccountAddress([4u8; 32]);
     // const VALIDATOR_ADDRESS: Address = Address::Account(VALIDATOR_ACCOUNT);
     const PROJECT_OWNER1_ACCOUNT: AccountAddress = AccountAddress([5u8; 32]);
@@ -805,7 +805,7 @@ mod tests {
     const PROJECT_OWNER2_ACCOUNT: AccountAddress = AccountAddress([6u8; 32]);
     // const PROJECT_OWNER2_ADDRESS: Address = Address::Account(PROJECT_OWNER_ACCOUNT);
     const USER1_ACCOUNT: AccountAddress = AccountAddress([7u8; 32]);
-    // const USER1_ADDRESS: Address = Address::Account(USER1_ACCOUNT);
+    const USER1_ADDRESS: Address = Address::Account(USER1_ACCOUNT);
     const USER2_ACCOUNT: AccountAddress = AccountAddress([8u8; 32]);
     // const USER2_ADDRESS: Address = Address::Account(USER2_ACCOUNT);
 
@@ -989,42 +989,146 @@ mod tests {
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let result: ContractResult<()> = contract_apply_curate_project(&ctx, &mut host);
-        claim!(result.is_ok(), "contract_apply_curate_project: Results in rejection.");
+        claim!(result.is_ok(), "test_contract_apply_curate_project: Results in rejection.");
         let project_state = host.state().project.get(&"DLSFJJ&&X87877XJJK".to_string()).unwrap();
         claim_eq!(
             project_state.project_uri,
             Some("https://overlay.global/".to_string()),
-            "contract_apply_curate_project: project_uri update failed."
+            "test_contract_apply_curate_project: project_uri update failed."
         );
         claim_eq!(
             project_state.owners,
             vec![PROJECT_OWNER1_ACCOUNT, PROJECT_OWNER2_ACCOUNT],
-            "contract_apply_curate_project: owners update failed."
+            "test_contract_apply_curate_project: owners update failed."
         );
         claim_eq!(
             project_state.pub_key,
             None,
-            "contract_apply_curate_project: pub_key update failed."
+            "test_contract_apply_curate_project: pub_key update failed."
         );
         claim_eq!(
             project_state.token_addr,
             None,
-            "contract_apply_curate_project: token_addr update failed."
+            "test_contract_apply_curate_project: token_addr update failed."
         );
         claim_eq!(
             project_state.seed_nft_addr,
             None,
-            "contract_apply_curate_project: seed_nft_addr update failed."
+            "test_contract_apply_curate_project: seed_nft_addr update failed."
         );
         claim_eq!(
             project_state.sale_addr,
             None,
-            "contract_apply_curate_project: sale_addr update failed"
+            "test_contract_apply_curate_project: sale_addr update failed"
         );
         claim_eq!(
             project_state.status,
             ProjectStatus::Candidate,
             "contract_apply_curate_project: status update failed."
+        );
+    }
+
+    #[concordium_test]
+    fn test_contract_curate_project_with_rollback() {
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(USER1_ACCOUNT);
+        let mut state_builder = TestStateBuilder::new();
+        let initial_state = init_state(&mut state_builder);
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        host.setup_mock_entrypoint(
+            ContractAddress::new(1001, 0),
+            OwnedEntrypointName::new_unchecked("view_user".to_string()),
+            MockFn::returning_ok(UserStateResponse {
+                is_curator: false,
+                is_validator: false,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            })
+        );
+
+        let params = CurateProjectParam {
+            project_id: "DLSFJJ&&X87877XJJN".to_string(),
+            project_uri: "somethingdangerous".to_string(),
+            owners: vec![USER1_ACCOUNT, USER2_ACCOUNT]
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        ctx.set_sender(USER1_ADDRESS);
+        let _ = host.with_rollback(|host| contract_curate_project(&ctx, host));
+        let state = host.state();
+        claim!(state.project.is_empty(), "test_contract_apply_curate_project_with_rollback: an user can call self apply.")
+    }
+
+    #[concordium_test]
+    fn test_contract_curate_project() {
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(CURATOR_ACCOUNT);
+        let mut state_builder = TestStateBuilder::new();
+        let initial_state = init_state(&mut state_builder);
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        host.setup_mock_entrypoint(
+            ContractAddress::new(1001, 0),
+            OwnedEntrypointName::new_unchecked("view_user".to_string()),
+            MockFn::returning_ok(UserStateResponse {
+                is_curator: true,
+                is_validator: false,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            })
+        );
+        host.setup_mock_entrypoint(
+            ContractAddress::new(1001, 0),
+            OwnedEntrypointName::new_unchecked("curate".to_string()),
+            MockFn::returning_ok(())
+        );
+
+        let params = CurateProjectParam {
+            project_id: "DLSFJJ&&X87877XJJK".to_string(),
+            project_uri: "https://overlay.global/".to_string(),
+            owners: vec![PROJECT_OWNER1_ACCOUNT, PROJECT_OWNER2_ACCOUNT]
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        ctx.set_sender(CURATOR_ADDRESS);
+        let result: ContractResult<()> = contract_curate_project(&ctx, &mut host);
+        claim!(result.is_ok(), "test_contract_curate_project: Results in rejection.");
+        let project_state = host.state().project.get(&"DLSFJJ&&X87877XJJK".to_string()).unwrap();
+        claim_eq!(
+            project_state.project_uri,
+            Some("https://overlay.global/".to_string()),
+            "test_contract_curate_project: project_uri update failed."
+        );
+        claim_eq!(
+            project_state.owners,
+            vec![PROJECT_OWNER1_ACCOUNT, PROJECT_OWNER2_ACCOUNT],
+            "test_contract_curate_project: owners update failed."
+        );
+        claim_eq!(
+            project_state.pub_key,
+            None,
+            "test_contract_curate_project: pub_key update failed."
+        );
+        claim_eq!(
+            project_state.token_addr,
+            None,
+            "test_contract_curate_project: token_addr update failed."
+        );
+        claim_eq!(
+            project_state.seed_nft_addr,
+            None,
+            "test_contract_curate_project: seed_nft_addr update failed."
+        );
+        claim_eq!(
+            project_state.sale_addr,
+            None,
+            "test_contract_curate_project: sale_addr update failed."
+        );
+        claim_eq!(
+            project_state.status,
+            ProjectStatus::Candidate,
+            "test_contract_curate_project: status update failed."
         );
     }
 }
