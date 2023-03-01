@@ -1131,4 +1131,10 @@ mod tests {
             "test_contract_curate_project: status update failed."
         );
     }
+
+    #[concordium_test]
+    fn test_contract_curate_project_admin_with_rollback() {}
+
+    #[concordium_test]
+    fn test_contract_curate_project_admin() {}
 }
