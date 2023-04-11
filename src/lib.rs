@@ -868,20 +868,13 @@ mod tests {
     use test_infrastructure::*;
 
     const ADMIN_ACCOUNT: AccountAddress = AccountAddress([1u8; 32]);
-    // const ADMIN_ADDRESS: Address = Address::Account(ADMIN_ACCOUNT);
-    const ADMIN2_ACCOUNT: AccountAddress = AccountAddress([2u8; 32]);
-    // const ADMIN2_ADDRESS: Address = Address::Account(ADMIN_ACCOUNT);
     const CURATOR_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
     const CURATOR_ADDRESS: Address = Address::Account(CURATOR_ACCOUNT);
-    // const VALIDATOR_ADDRESS: Address = Address::Account(VALIDATOR_ACCOUNT);
     const PROJECT_OWNER1_ACCOUNT: AccountAddress = AccountAddress([5u8; 32]);
-    // const PROJECT_OWNER1_ADDRESS: Address = Address::Account(PROJECT_OWNER_ACCOUNT);
     const PROJECT_OWNER2_ACCOUNT: AccountAddress = AccountAddress([6u8; 32]);
-    // const PROJECT_OWNER2_ADDRESS: Address = Address::Account(PROJECT_OWNER_ACCOUNT);
     const USER1_ACCOUNT: AccountAddress = AccountAddress([7u8; 32]);
     const USER1_ADDRESS: Address = Address::Account(USER1_ACCOUNT);
     const USER2_ACCOUNT: AccountAddress = AccountAddress([8u8; 32]);
-    // const USER2_ADDRESS: Address = Address::Account(USER2_ACCOUNT);
 
     fn init_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
         let state = State {
@@ -935,7 +928,7 @@ mod tests {
 
     #[concordium_test]
     /// Test that with_rollback works for the state on invoking
-    /// overlay-projects.contract_update_contract_state.
+    /// overlay-projects.update_contract_state.
     fn test_contract_update_contract_state_with_rollback() {
         let admin = AccountAddress([1; 32]);
         let invoker = AccountAddress([7; 32]);
@@ -977,6 +970,8 @@ mod tests {
     }
 
     #[concordium_test]
+    /// Test that overlay-projects.update_contract_state successfully update
+    /// staking_contract_addr and user_contract_addr.
     fn test_contract_update_contract_state() {
         let admin = AccountAddress([1; 32]);
         let staking_contract_addr = ContractAddress::new(1000, 0);
@@ -988,7 +983,7 @@ mod tests {
 
         let mut state_builder = TestStateBuilder::new();
         let initial_state = State {
-            admin: ADMIN_ACCOUNT,
+            admin,
             staking_contract_addr,
             user_contract_addr,
             project: state_builder.new_map(),
@@ -1021,51 +1016,84 @@ mod tests {
     }
 
     #[concordium_test]
+    /// Test that with_rollback works for the state on invoking
+    /// overlay-projects.transfer_admin.
     fn test_contract_transfer_admin_with_rollback() {
+        let admin = AccountAddress([1; 32]);
+        let invoker = AccountAddress([8; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_invoker(USER2_ACCOUNT);
+        ctx.set_invoker(invoker);
         let mut state_builder = TestStateBuilder::new();
-        let initial_state = init_state(&mut state_builder);
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
+        let expected_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = TransferAdminParam {
-            admin: USER2_ACCOUNT,
-        };
+        let params = TransferAdminParam { admin: invoker };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let _ = host.with_rollback(|host| contract_transfer_admin(&ctx, host));
-        let state = host.state();
+        let actual_state = host.state();
         claim_eq!(
-            state.admin,
-            ADMIN_ACCOUNT,
-            "test_contract_transfer_admin_with_rollback: an user can update admin."
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
         );
     }
 
     #[concordium_test]
+    /// Test that overlay-projects.transfer_admin successfully update admin.
     fn test_contract_transfer_admin() {
+        let admin = AccountAddress([1; 32]);
+        let admin_to_be_set = AccountAddress([2u8; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_invoker(ADMIN_ACCOUNT);
+        ctx.set_invoker(admin);
         let mut state_builder = TestStateBuilder::new();
-        let initial_state = init_state(&mut state_builder);
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
+        let expected_state = State {
+            admin: admin_to_be_set,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
         let mut host = TestHost::new(initial_state, state_builder);
 
         let params = TransferAdminParam {
-            admin: ADMIN2_ACCOUNT,
+            admin: admin_to_be_set,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
-        let result: ContractResult<()> = contract_transfer_admin(&ctx, &mut host);
+        let result = contract_transfer_admin(&ctx, &mut host);
         claim!(
             result.is_ok(),
             "test_contract_transfer_admin: Results in rejection"
         );
-        let state = host.state();
+        let actual_state = host.state();
         claim_eq!(
-            state.admin,
-            ADMIN2_ACCOUNT,
-            "test_contract_transfer_admin: admin update failed."
-        )
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
