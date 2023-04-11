@@ -165,7 +165,7 @@ enum Error {
     ShouldNotBeTON,
     OnlyAccount,
     FailedInvokeUserContract,
-    FailedInvokeUserContractView
+    FailedInvokeUserContractView,
 }
 
 type ContractResult<A> = Result<A, Error>;
@@ -277,17 +277,18 @@ fn contract_curate_project<S: HasStateApi>(
         addr: sender_account,
     };
     let user_state: UserStateResponse = host
-        .invoke_contract_read_only(
-            &user_contract_addr,
-            &view_user_params,
-            func,
-            Amount::zero(),
-        ).unwrap().ok_or(Error::FailedInvokeUserContractView)?.get()?;
+        .invoke_contract_read_only(&user_contract_addr, &view_user_params, func, Amount::zero())
+        .unwrap()
+        .ok_or(Error::FailedInvokeUserContractView)?
+        .get()?;
 
     ensure!(user_state.is_curator, Error::InvalidCaller);
 
     let state = host.state_mut();
-    state.project.entry(params.project_id.clone()).or_insert_with(|| ProjectState {
+    state
+        .project
+        .entry(params.project_id.clone())
+        .or_insert_with(|| ProjectState {
             project_uri: Some(params.project_uri),
             owners: params.owners,
             pub_key: None,
@@ -295,20 +296,14 @@ fn contract_curate_project<S: HasStateApi>(
             seed_nft_addr: None,
             sale_addr: None,
             status: ProjectStatus::Candidate,
-        },
-    );
+        });
 
     let func = EntrypointName::new("curate".into()).unwrap();
     let curate_param = CurateParam {
         addr: sender_account,
         project_id: params.project_id,
     };
-    let result = host.invoke_contract(
-        &user_contract_addr,
-        &curate_param,
-        func,
-        Amount::zero(),
-    );
+    let result = host.invoke_contract(&user_contract_addr, &curate_param, func, Amount::zero());
 
     match result {
         Ok((_, _)) => Ok(()),
@@ -337,17 +332,18 @@ fn contract_curate_project_admin<S: HasStateApi>(
         addr: params.curator,
     };
     let user_state: UserStateResponse = host
-        .invoke_contract_read_only(
-            &user_contract_addr,
-            &view_user_params,
-            func,
-            Amount::zero(),
-        ).unwrap().ok_or(Error::FailedInvokeUserContractView)?.get()?;
+        .invoke_contract_read_only(&user_contract_addr, &view_user_params, func, Amount::zero())
+        .unwrap()
+        .ok_or(Error::FailedInvokeUserContractView)?
+        .get()?;
 
     ensure!(user_state.is_curator, Error::InvalidCaller);
 
     let state = host.state_mut();
-    state.project.entry(params.project_id.clone()).or_insert_with(|| ProjectState {
+    state
+        .project
+        .entry(params.project_id.clone())
+        .or_insert_with(|| ProjectState {
             project_uri: Some(params.project_uri),
             owners: params.owners,
             pub_key: None,
@@ -355,8 +351,7 @@ fn contract_curate_project_admin<S: HasStateApi>(
             seed_nft_addr: None,
             sale_addr: None,
             status: ProjectStatus::Candidate,
-        },
-    );
+        });
     Ok(())
 }
 
@@ -384,12 +379,10 @@ fn contract_validate_project<S: HasStateApi>(
         addr: sender_account,
     };
     let user_state: UserStateResponse = host
-        .invoke_contract_read_only(
-            &user_contract_addr,
-            &view_user_params,
-            func,
-            Amount::zero(),
-        ).unwrap().ok_or(Error::FailedInvokeUserContractView)?.get()?;
+        .invoke_contract_read_only(&user_contract_addr, &view_user_params, func, Amount::zero())
+        .unwrap()
+        .ok_or(Error::FailedInvokeUserContractView)?
+        .get()?;
 
     ensure!(user_state.is_validator, Error::InvalidCaller);
 
@@ -412,12 +405,7 @@ fn contract_validate_project<S: HasStateApi>(
         addr: sender_account,
         project_id: params.project_id,
     };
-    let result = host.invoke_contract(
-        &user_contract_addr,
-        &validate_param,
-        func,
-        Amount::zero(),
-    );
+    let result = host.invoke_contract(&user_contract_addr, &validate_param, func, Amount::zero());
 
     match result {
         Ok((_, _)) => Ok(()),
@@ -446,12 +434,10 @@ fn contract_validate_project_admin<S: HasStateApi>(
         addr: params.validator,
     };
     let user_state: UserStateResponse = host
-        .invoke_contract_read_only(
-            &user_contract_addr,
-            &view_user_params,
-            func,
-            Amount::zero(),
-        ).unwrap().ok_or(Error::FailedInvokeUserContractView)?.get()?;
+        .invoke_contract_read_only(&user_contract_addr, &view_user_params, func, Amount::zero())
+        .unwrap()
+        .ok_or(Error::FailedInvokeUserContractView)?
+        .get()?;
 
     ensure!(user_state.is_validator, Error::InvalidCaller);
 
@@ -491,8 +477,8 @@ fn contract_add_token_addr<S: HasStateApi>(
         Error::InvalidCaller
     );
     ensure!(
-        (old_values.status == ProjectStatus::Whitelist && old_values.seed_nft_addr != None) ||
-        (old_values.status == ProjectStatus::Candidate && old_values.seed_nft_addr == None),
+        (old_values.status == ProjectStatus::Whitelist && old_values.seed_nft_addr != None)
+            || (old_values.status == ProjectStatus::Candidate && old_values.seed_nft_addr == None),
         Error::InvalidStatus
     );
 
@@ -760,10 +746,7 @@ fn contract_view_projects<S: HasStateApi>(
     let projects_state = &host.state().project;
     let mut projects_state_response: ViewProjectsResponse = Vec::new();
     for (project_id, project_state) in projects_state.iter() {
-        projects_state_response.push((
-            project_id.clone(),
-            project_state.clone()
-        ));
+        projects_state_response.push((project_id.clone(), project_state.clone()));
     }
     Ok(projects_state_response)
 }
@@ -788,6 +771,98 @@ fn contract_view_project_ids<S: HasStateApi>(
 }
 
 #[concordium_cfg_test]
+/// implements Debug for State inside test functions.
+/// this implementation will be build only when `concordium-std/wasm-test` feature is active.
+/// (e.g. when launched by `cargo concordium test`)
+impl<S: HasStateApi> Debug for State<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "admin: {:?}, staking_contract_addr: {:?}, user_contract_addr: {:?}, ",
+            self.admin, self.staking_contract_addr, self.user_contract_addr,
+        )?;
+        for (project_id, project_state) in self.project.iter() {
+            write!(
+                f,
+                "project_id: {:?}, project_state: {:?}, ",
+                project_id, project_state
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[concordium_cfg_test]
+/// implements PartialEq for `claim_eq` inside test functions.
+/// this implementation will be build only when `concordium-std/wasm-test` feature is active.
+/// (e.g. when launched by `cargo concordium test`)
+impl<S: HasStateApi> PartialEq for State<S> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.admin != other.admin {
+            return false;
+        }
+        if self.staking_contract_addr != other.staking_contract_addr {
+            return false;
+        }
+        if self.user_contract_addr != other.user_contract_addr {
+            return false;
+        }
+        if self.project.iter().count() != other.project.iter().count() {
+            return false;
+        }
+        for (my_project_id, my_project_state) in self.project.iter() {
+            let other_project_state = other.project.get(&my_project_id);
+            if other_project_state.is_none() {
+                return false;
+            }
+            let other_project_state = other_project_state.unwrap();
+            if my_project_state.clone() != other_project_state.clone() {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
+    }
+}
+
+#[concordium_cfg_test]
+/// implements Debug for ProjectState inside test functions.
+/// this implementation will be build only when `concordium-std/wasm-test` feature is active.
+/// (e.g. when launched by `cargo concordium test`)
+impl Debug for ProjectState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "project_uri: {:?}, owners: {:?}, pub_key: {:?}, token_addr: {:?}, seed_nft_addr: {:?}, sale_addr: {:?}, status: {:?}",
+            self.project_uri, self.owners, self.pub_key, self.token_addr, self.seed_nft_addr, self.sale_addr, self.status
+        )
+    }
+}
+
+#[concordium_cfg_test]
+/// implements PartialEq for `claim_eq` inside test functions.
+/// this implementation will be build only when `concordium-std/wasm-test` feature is active.
+/// (e.g. when launched by `cargo concordium test`)
+impl PartialEq for ProjectState {
+    fn eq(&self, other: &Self) -> bool {
+        self.project_uri == other.project_uri
+            && self.owners == other.owners
+            && self.pub_key == other.pub_key
+            && self.token_addr == other.token_addr
+            && self.seed_nft_addr == other.seed_nft_addr
+            && self.sale_addr == other.sale_addr
+            && self.status == other.status
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
+    }
+}
+
+#[concordium_cfg_test]
 mod tests {
     use super::*;
     use test_infrastructure::*;
@@ -798,7 +873,6 @@ mod tests {
     // const ADMIN2_ADDRESS: Address = Address::Account(ADMIN_ACCOUNT);
     const CURATOR_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
     const CURATOR_ADDRESS: Address = Address::Account(CURATOR_ACCOUNT);
-    const VALIDATOR_ACCOUNT: AccountAddress = AccountAddress([4u8; 32]);
     // const VALIDATOR_ADDRESS: Address = Address::Account(VALIDATOR_ACCOUNT);
     const PROJECT_OWNER1_ACCOUNT: AccountAddress = AccountAddress([5u8; 32]);
     // const PROJECT_OWNER1_ADDRESS: Address = Address::Account(PROJECT_OWNER_ACCOUNT);
@@ -834,11 +908,7 @@ mod tests {
 
         let init_result = contract_init(&ctx, &mut state_builder);
         let state = init_result.expect_report("test_init: Contract Init Failed.");
-        claim_eq!(
-            state.admin,
-            ADMIN_ACCOUNT,
-            "test_init: admin init failed."
-        );
+        claim_eq!(state.admin, ADMIN_ACCOUNT, "test_init: admin init failed.");
         claim_eq!(
             state.staking_contract_addr,
             ContractAddress::new(1000, 0),
@@ -894,7 +964,10 @@ mod tests {
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let result: ContractResult<()> = contract_update_contract_state(&ctx, &mut host);
-        claim!(result.is_ok(), "test_contract_update_contract_state: Results in rejection");
+        claim!(
+            result.is_ok(),
+            "test_contract_update_contract_state: Results in rejection"
+        );
         let state = host.state();
         claim_eq!(
             state.staking_contract_addr,
@@ -917,7 +990,7 @@ mod tests {
         let mut host = TestHost::new(initial_state, state_builder);
 
         let params = TransferAdminParam {
-            admin: USER2_ACCOUNT
+            admin: USER2_ACCOUNT,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
@@ -939,13 +1012,16 @@ mod tests {
         let mut host = TestHost::new(initial_state, state_builder);
 
         let params = TransferAdminParam {
-            admin: ADMIN2_ACCOUNT
+            admin: ADMIN2_ACCOUNT,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let result: ContractResult<()> = contract_transfer_admin(&ctx, &mut host);
-        claim!(result.is_ok(), "test_contract_transfer_admin: Results in rejection");
-        let state =  host.state();
+        claim!(
+            result.is_ok(),
+            "test_contract_transfer_admin: Results in rejection"
+        );
+        let state = host.state();
         claim_eq!(
             state.admin,
             ADMIN2_ACCOUNT,
@@ -964,13 +1040,16 @@ mod tests {
         let params = CurateProjectParam {
             project_id: "DLSFJJ&&X87877XJJN".to_string(),
             project_uri: "somethingdangerous".to_string(),
-            owners: vec![USER1_ACCOUNT, USER2_ACCOUNT]
+            owners: vec![USER1_ACCOUNT, USER2_ACCOUNT],
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let _ = host.with_rollback(|host| contract_apply_curate_project(&ctx, host));
         let state = host.state();
-        claim!(state.project.is_empty(), "test_contract_apply_curate_project_with_rollback: an user can call self apply.")
+        claim!(
+            state.project.is_empty(),
+            "test_contract_apply_curate_project_with_rollback: an user can call self apply."
+        )
     }
 
     #[concordium_test]
@@ -984,13 +1063,20 @@ mod tests {
         let params = CurateProjectParam {
             project_id: "DLSFJJ&&X87877XJJK".to_string(),
             project_uri: "https://overlay.global/".to_string(),
-            owners: vec![PROJECT_OWNER1_ACCOUNT, PROJECT_OWNER2_ACCOUNT]
+            owners: vec![PROJECT_OWNER1_ACCOUNT, PROJECT_OWNER2_ACCOUNT],
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let result: ContractResult<()> = contract_apply_curate_project(&ctx, &mut host);
-        claim!(result.is_ok(), "test_contract_apply_curate_project: Results in rejection.");
-        let project_state = host.state().project.get(&"DLSFJJ&&X87877XJJK".to_string()).unwrap();
+        claim!(
+            result.is_ok(),
+            "test_contract_apply_curate_project: Results in rejection."
+        );
+        let project_state = host
+            .state()
+            .project
+            .get(&"DLSFJJ&&X87877XJJK".to_string())
+            .unwrap();
         claim_eq!(
             project_state.project_uri,
             Some("https://overlay.global/".to_string()),
@@ -1044,20 +1130,23 @@ mod tests {
                 is_validator: false,
                 curated_projects: Vec::new(),
                 validated_projects: Vec::new(),
-            })
+            }),
         );
 
         let params = CurateProjectParam {
             project_id: "DLSFJJ&&X87877XJJN".to_string(),
             project_uri: "somethingdangerous".to_string(),
-            owners: vec![USER1_ACCOUNT, USER2_ACCOUNT]
+            owners: vec![USER1_ACCOUNT, USER2_ACCOUNT],
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         ctx.set_sender(USER1_ADDRESS);
         let _ = host.with_rollback(|host| contract_curate_project(&ctx, host));
         let state = host.state();
-        claim!(state.project.is_empty(), "test_contract_apply_curate_project_with_rollback: an user can call self apply.")
+        claim!(
+            state.project.is_empty(),
+            "test_contract_apply_curate_project_with_rollback: an user can call self apply."
+        )
     }
 
     #[concordium_test]
@@ -1076,25 +1165,32 @@ mod tests {
                 is_validator: false,
                 curated_projects: Vec::new(),
                 validated_projects: Vec::new(),
-            })
+            }),
         );
         host.setup_mock_entrypoint(
             ContractAddress::new(1001, 0),
             OwnedEntrypointName::new_unchecked("curate".to_string()),
-            MockFn::returning_ok(())
+            MockFn::returning_ok(()),
         );
 
         let params = CurateProjectParam {
             project_id: "DLSFJJ&&X87877XJJK".to_string(),
             project_uri: "https://overlay.global/".to_string(),
-            owners: vec![PROJECT_OWNER1_ACCOUNT, PROJECT_OWNER2_ACCOUNT]
+            owners: vec![PROJECT_OWNER1_ACCOUNT, PROJECT_OWNER2_ACCOUNT],
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         ctx.set_sender(CURATOR_ADDRESS);
         let result: ContractResult<()> = contract_curate_project(&ctx, &mut host);
-        claim!(result.is_ok(), "test_contract_curate_project: Results in rejection.");
-        let project_state = host.state().project.get(&"DLSFJJ&&X87877XJJK".to_string()).unwrap();
+        claim!(
+            result.is_ok(),
+            "test_contract_curate_project: Results in rejection."
+        );
+        let project_state = host
+            .state()
+            .project
+            .get(&"DLSFJJ&&X87877XJJK".to_string())
+            .unwrap();
         claim_eq!(
             project_state.project_uri,
             Some("https://overlay.global/".to_string()),
