@@ -10,7 +10,7 @@ default = ["std"]
 std = ["concordium-std/std"]
 
 [dependencies]
-concordium-std = "6.0.0"
+concordium-std = "6.1.0"
 
 [lib]
 crate-type=["cdylib", "rlib"]
