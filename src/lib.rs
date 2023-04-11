@@ -478,6 +478,7 @@ fn contract_add_token_addr<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: AddTokenAddrParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
+    // TODO there may be no project inside "project" map. check the project map has project_id key
     let old_values = state.project.get(&params.project_id).unwrap();
     ensure!(
         old_values.owners.contains(&ctx.invoker()),
@@ -511,6 +512,7 @@ fn contract_add_pub_key<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: AddPubKeyParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
+    // TODO there may be no project inside "project" map. check the project map has project_id key
     let old_values = state.project.get(&params.project_id).unwrap();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
     ensure!(
@@ -1757,6 +1759,286 @@ mod tests {
             result.is_ok(),
             "test_contract_curate_project: Results in rejection."
         );
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
+    }
+
+    #[concordium_test]
+    /// Test that with_rollback works for the state on invoking overlay-projects.add_token_addr.
+    fn test_contract_add_token_addr_with_rollback() {
+        let admin = AccountAddress([1; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+        let token_addr = ContractAddress::new(1002, 0);
+        let project_id: ProjectId = "DLSFJJ&&X87877XJJN".into();
+        let project_uri: String = "https://overlay.global/".into();
+        let project_owner1 = AccountAddress([7; 32]);
+        let project_owner2 = AccountAddress([8; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(project_owner1);
+        let mut state_builder = TestStateBuilder::new();
+        let mut initial_project = state_builder.new_map();
+        initial_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Whitelist,
+            },
+        );
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: initial_project,
+        };
+        let mut expected_project = state_builder.new_map();
+        expected_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Whitelist,
+            },
+        );
+        let expected_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: expected_project,
+        };
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        let params = AddTokenAddrParam {
+            project_id,
+            token_addr,
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        let _ = host.with_rollback(|host| contract_add_token_addr(&ctx, host));
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
+    }
+
+    #[concordium_test]
+    /// Test that overlay-projects.add_token_addr successfully update project's token address.
+    fn test_contract_add_token_addr() {
+        let admin = AccountAddress([1; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+        let token_addr = ContractAddress::new(1002, 0);
+        let project_id: ProjectId = "DLSFJJ&&X87877XJJN".into();
+        let project_uri: String = "https://overlay.global/".into();
+        let project_owner1 = AccountAddress([7; 32]);
+        let project_owner2 = AccountAddress([8; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(project_owner1);
+        let mut state_builder = TestStateBuilder::new();
+        let mut initial_project = state_builder.new_map();
+        initial_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Candidate,
+            },
+        );
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: initial_project,
+        };
+        let mut expected_project = state_builder.new_map();
+        expected_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: Some(token_addr),
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Candidate,
+            },
+        );
+        let expected_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: expected_project,
+        };
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        let params = AddTokenAddrParam {
+            project_id,
+            token_addr,
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        let _ = host.with_rollback(|host| contract_add_token_addr(&ctx, host));
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
+    }
+
+    #[concordium_test]
+    /// Test that with_rollback works for the state on invoking overlay-projects.add_pub_key.
+    fn test_contract_add_pub_key_with_rollback() {
+        let admin = AccountAddress([1; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+        let pub_key: String = "test-pub-key".into();
+        let project_id: ProjectId = "DLSFJJ&&X87877XJJN".into();
+        let project_uri: String = "https://overlay.global/".into();
+        let project_owner1 = AccountAddress([7; 32]);
+        let project_owner2 = AccountAddress([8; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(admin);
+        let mut state_builder = TestStateBuilder::new();
+        let mut initial_project = state_builder.new_map();
+        initial_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Candidate,
+            },
+        );
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: initial_project,
+        };
+        let mut expected_project = state_builder.new_map();
+        expected_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Candidate,
+            },
+        );
+        let expected_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: expected_project,
+        };
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        let params = AddPubKeyParam {
+            project_id,
+            pub_key,
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        let _ = host.with_rollback(|host| contract_add_pub_key(&ctx, host));
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
+    }
+
+    #[concordium_test]
+    /// Test that overlay-projects.contract_add_pub_key successfully update project's pub_key
+    fn test_contract_add_pub_key() {
+        let admin = AccountAddress([1; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+        let pub_key: String = "test-pub-key".into();
+        let project_id: ProjectId = "DLSFJJ&&X87877XJJN".into();
+        let project_uri: String = "https://overlay.global/".into();
+        let project_owner1 = AccountAddress([7; 32]);
+        let project_owner2 = AccountAddress([8; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(admin);
+        let mut state_builder = TestStateBuilder::new();
+        let mut initial_project = state_builder.new_map();
+        initial_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Whitelist,
+            },
+        );
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: initial_project,
+        };
+        let mut expected_project = state_builder.new_map();
+        expected_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: Some(pub_key.clone()),
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Whitelist,
+            },
+        );
+        let expected_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: expected_project,
+        };
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        let params = AddPubKeyParam {
+            project_id,
+            pub_key,
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        let _ = host.with_rollback(|host| contract_add_pub_key(&ctx, host));
         let actual_state = host.state();
         claim_eq!(
             *actual_state,
