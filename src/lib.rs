@@ -874,25 +874,6 @@ mod tests {
     use super::*;
     use test_infrastructure::*;
 
-    const ADMIN_ACCOUNT: AccountAddress = AccountAddress([1u8; 32]);
-    const CURATOR_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
-    const CURATOR_ADDRESS: Address = Address::Account(CURATOR_ACCOUNT);
-    const PROJECT_OWNER1_ACCOUNT: AccountAddress = AccountAddress([5u8; 32]);
-    const PROJECT_OWNER2_ACCOUNT: AccountAddress = AccountAddress([6u8; 32]);
-    const USER1_ACCOUNT: AccountAddress = AccountAddress([7u8; 32]);
-    const USER1_ADDRESS: Address = Address::Account(USER1_ACCOUNT);
-    const USER2_ACCOUNT: AccountAddress = AccountAddress([8u8; 32]);
-
-    fn init_state<S: HasStateApi>(state_builder: &mut StateBuilder<S>) -> State<S> {
-        let state = State {
-            admin: ADMIN_ACCOUNT,
-            staking_contract_addr: ContractAddress::new(1000, 0),
-            user_contract_addr: ContractAddress::new(1001, 0),
-            project: state_builder.new_map(),
-        };
-        state
-    }
-
     #[concordium_test]
     /// Test that init succeeds.
     fn test_init() {
@@ -1211,13 +1192,34 @@ mod tests {
     }
 
     #[concordium_test]
+    /// Test that with_rollback works for the state on invoking overlay-projects.curate_project.
     fn test_contract_curate_project_with_rollback() {
+        let admin = AccountAddress([1; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+        let project_id: ProjectId = "DLSFJJ&&X87877XJJN".into();
+        let project_uri: String = "somethingdangerous".into();
+        let project_owner1 = AccountAddress([7; 32]);
+        let project_owner2 = AccountAddress([8; 32]);
+
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_invoker(USER1_ACCOUNT);
         let mut state_builder = TestStateBuilder::new();
-        let initial_state = init_state(&mut state_builder);
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
+        let expected_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
         let mut host = TestHost::new(initial_state, state_builder);
 
+        // set up overlay-users.view_user mock to return non-curator user.
+        // this leads to InvalidCaller error.
         host.setup_mock_entrypoint(
             ContractAddress::new(1001, 0),
             OwnedEntrypointName::new_unchecked("view_user".to_string()),
@@ -1230,29 +1232,65 @@ mod tests {
         );
 
         let params = CurateProjectParam {
-            project_id: "DLSFJJ&&X87877XJJN".to_string(),
-            project_uri: "somethingdangerous".to_string(),
-            owners: vec![USER1_ACCOUNT, USER2_ACCOUNT],
+            project_id,
+            project_uri,
+            owners: vec![project_owner1, project_owner2],
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
-        ctx.set_sender(USER1_ADDRESS);
+        ctx.set_sender(Address::Account(project_owner1));
         let _ = host.with_rollback(|host| contract_curate_project(&ctx, host));
-        let state = host.state();
-        claim!(
-            state.project.is_empty(),
-            "test_contract_apply_curate_project_with_rollback: an user can call self apply."
-        )
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
+    /// Test that overlay-projects.curate_project successfully invoke overlay-users.curate function.
     fn test_contract_curate_project() {
+        let admin = AccountAddress([1; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+        let project_id: ProjectId = "DLSFJJ&&X87877XJJK".into();
+        let project_uri: String = "https://overlay.global/".into();
+        let project_owner1 = AccountAddress([5; 32]);
+        let project_owner2 = AccountAddress([6; 32]);
+        let curator_address = AccountAddress([3; 32]);
+
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_invoker(CURATOR_ACCOUNT);
         let mut state_builder = TestStateBuilder::new();
-        let initial_state = init_state(&mut state_builder);
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
+        let mut expected_project = state_builder.new_map();
+        expected_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Candidate,
+            },
+        );
+        let expected_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: expected_project,
+        };
         let mut host = TestHost::new(initial_state, state_builder);
 
+        // set up overlay-users.view_user mock to return curator user so that the curate func would
+        // be called by this func.
         host.setup_mock_entrypoint(
             ContractAddress::new(1001, 0),
             OwnedEntrypointName::new_unchecked("view_user".to_string()),
@@ -1263,6 +1301,7 @@ mod tests {
                 validated_projects: Vec::new(),
             }),
         );
+        // set up overlay-users.curate.
         host.setup_mock_entrypoint(
             ContractAddress::new(1001, 0),
             OwnedEntrypointName::new_unchecked("curate".to_string()),
@@ -1270,57 +1309,23 @@ mod tests {
         );
 
         let params = CurateProjectParam {
-            project_id: "DLSFJJ&&X87877XJJK".to_string(),
-            project_uri: "https://overlay.global/".to_string(),
-            owners: vec![PROJECT_OWNER1_ACCOUNT, PROJECT_OWNER2_ACCOUNT],
+            project_id,
+            project_uri,
+            owners: vec![project_owner1, project_owner2],
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
-        ctx.set_sender(CURATOR_ADDRESS);
+        ctx.set_sender(Address::Account(curator_address));
         let result: ContractResult<()> = contract_curate_project(&ctx, &mut host);
         claim!(
             result.is_ok(),
             "test_contract_curate_project: Results in rejection."
         );
-        let project_state = host
-            .state()
-            .project
-            .get(&"DLSFJJ&&X87877XJJK".to_string())
-            .unwrap();
+        let actual_state = host.state();
         claim_eq!(
-            project_state.project_uri,
-            Some("https://overlay.global/".to_string()),
-            "test_contract_curate_project: project_uri update failed."
-        );
-        claim_eq!(
-            project_state.owners,
-            vec![PROJECT_OWNER1_ACCOUNT, PROJECT_OWNER2_ACCOUNT],
-            "test_contract_curate_project: owners update failed."
-        );
-        claim_eq!(
-            project_state.pub_key,
-            None,
-            "test_contract_curate_project: pub_key update failed."
-        );
-        claim_eq!(
-            project_state.token_addr,
-            None,
-            "test_contract_curate_project: token_addr update failed."
-        );
-        claim_eq!(
-            project_state.seed_nft_addr,
-            None,
-            "test_contract_curate_project: seed_nft_addr update failed."
-        );
-        claim_eq!(
-            project_state.sale_addr,
-            None,
-            "test_contract_curate_project: sale_addr update failed."
-        );
-        claim_eq!(
-            project_state.status,
-            ProjectStatus::Candidate,
-            "test_contract_curate_project: status update failed."
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
         );
     }
 
