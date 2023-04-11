@@ -894,6 +894,7 @@ mod tests {
     }
 
     #[concordium_test]
+    /// Test that init succeeds.
     fn test_init() {
         // invoker will be an admin
         let invoker = AccountAddress([1; 32]);
@@ -933,62 +934,89 @@ mod tests {
     }
 
     #[concordium_test]
-    fn test_contract_udpate_contract_state_with_rollback() {
+    /// Test that with_rollback works for the state on invoking
+    /// overlay-projects.contract_update_contract_state.
+    fn test_contract_update_contract_state_with_rollback() {
+        let admin = AccountAddress([1; 32]);
+        let invoker = AccountAddress([7; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+        let next_staking_contract_addr = ContractAddress::new(2000, 0);
+        let next_user_contract_addr = ContractAddress::new(2001, 0);
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_invoker(USER1_ACCOUNT);
+        ctx.set_invoker(invoker);
+
         let mut state_builder = TestStateBuilder::new();
-        let initial_state = init_state(&mut state_builder);
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
+        let expected_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
         let mut host = TestHost::new(initial_state, state_builder);
 
         let params = UpdateContractStateParam {
-            staking_contract_addr: ContractAddress::new(2000, 0),
-            user_contract_addr: ContractAddress::new(2001, 0),
+            staking_contract_addr: next_staking_contract_addr,
+            user_contract_addr: next_user_contract_addr,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let _ = host.with_rollback(|host| contract_update_contract_state(&ctx, host));
-        let state = host.state();
+        let actual_state = host.state();
         claim_eq!(
-            state.staking_contract_addr,
-            ContractAddress::new(1000, 0),
-            "test_contract_udpate_contract_state_with_rollback: an user can update staking_contract_addr."
-        );
-        claim_eq!(
-            state.user_contract_addr,
-            ContractAddress::new(1001, 0),
-            "test_contract_udpate_contract_state_with_rollback: an user can update user_contract_addr"
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
         );
     }
 
     #[concordium_test]
     fn test_contract_update_contract_state() {
+        let admin = AccountAddress([1; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+        let next_staking_contract_addr = ContractAddress::new(2000, 0);
+        let next_user_contract_addr = ContractAddress::new(2001, 0);
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_invoker(ADMIN_ACCOUNT);
+        ctx.set_invoker(admin);
+
         let mut state_builder = TestStateBuilder::new();
-        let initial_state = init_state(&mut state_builder);
+        let initial_state = State {
+            admin: ADMIN_ACCOUNT,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
+        let expected_state = State {
+            admin,
+            staking_contract_addr: next_staking_contract_addr,
+            user_contract_addr: next_user_contract_addr,
+            project: state_builder.new_map(),
+        };
         let mut host = TestHost::new(initial_state, state_builder);
 
         let params = UpdateContractStateParam {
-            staking_contract_addr: ContractAddress::new(2000, 0),
-            user_contract_addr: ContractAddress::new(2001, 0),
+            staking_contract_addr: next_staking_contract_addr,
+            user_contract_addr: next_user_contract_addr,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
-        let result: ContractResult<()> = contract_update_contract_state(&ctx, &mut host);
+        let result = contract_update_contract_state(&ctx, &mut host);
         claim!(
             result.is_ok(),
             "test_contract_update_contract_state: Results in rejection"
         );
-        let state = host.state();
+        let actual_state = host.state();
         claim_eq!(
-            state.staking_contract_addr,
-            ContractAddress::new(2000, 0),
-            "test_contract_update_contract_state: staking_contract_addr update failed."
-        );
-        claim_eq!(
-            state.user_contract_addr,
-            ContractAddress::new(2001, 0),
-            "test_contract_update_contract_state: user_contract_addr update failed."
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
         );
     }
 
