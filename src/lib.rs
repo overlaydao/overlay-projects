@@ -895,29 +895,40 @@ mod tests {
 
     #[concordium_test]
     fn test_init() {
+        // invoker will be an admin
+        let invoker = AccountAddress([1; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+
         let mut ctx = TestInitContext::empty();
         let mut state_builder = TestStateBuilder::new();
-        ctx.set_init_origin(ADMIN_ACCOUNT);
+        ctx.set_init_origin(invoker);
 
+        // prepare for expected state after init
+        let expected_state = State {
+            admin: invoker,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
+
+        // create params
         let params = UpdateContractStateParam {
-            staking_contract_addr: ContractAddress::new(1000, 0),
-            user_contract_addr: ContractAddress::new(1001, 0),
+            staking_contract_addr,
+            user_contract_addr,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
 
-        let init_result = contract_init(&ctx, &mut state_builder);
-        let state = init_result.expect_report("test_init: Contract Init Failed.");
-        claim_eq!(state.admin, ADMIN_ACCOUNT, "test_init: admin init failed.");
+        // execute init
+        let result = contract_init(&ctx, &mut state_builder);
+        // check init result
+        claim!(result.is_ok());
+        let actual_state = result.unwrap();
         claim_eq!(
-            state.staking_contract_addr,
-            ContractAddress::new(1000, 0),
-            "test_init: staking_contract_addr init failed."
-        );
-        claim_eq!(
-            state.user_contract_addr,
-            ContractAddress::new(1001, 0),
-            "test_init: user_contract_addr init failed."
+            actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
         );
     }
 
