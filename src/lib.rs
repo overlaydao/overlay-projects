@@ -392,12 +392,14 @@ fn contract_validate_project<S: HasStateApi>(
     ensure!(user_state.is_validator, Error::InvalidCaller);
 
     let state = host.state_mut();
+    // TODO there may be no project inside "project" map. check the project map has project_id key
     let old_values = state.project.get(&params.project_id).unwrap();
     ensure!(
         old_values.status == ProjectStatus::Candidate,
         Error::InvalidStatus
     );
 
+    // TODO is it OK params.token_addr is not used anywhere inside this function.
     state
         .project
         .entry(params.project_id.clone())
@@ -410,12 +412,9 @@ fn contract_validate_project<S: HasStateApi>(
         addr: sender_account,
         project_id: params.project_id,
     };
-    let result = host.invoke_contract(&user_contract_addr, &validate_param, func, Amount::zero());
-
-    match result {
-        Ok((_, _)) => Ok(()),
-        Err(_) => Err(Error::FailedInvokeUserContract),
-    }
+    host.invoke_contract(&user_contract_addr, &validate_param, func, Amount::zero())
+        .map(|(_, _)| ())
+        .map_err(|_| Error::FailedInvokeUserContract)
 }
 
 #[receive(
@@ -1377,7 +1376,7 @@ mod tests {
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
-        let _ = host.with_rollback(|host| contract_curate_project(&ctx, host));
+        let _ = host.with_rollback(|host| contract_curate_project_admin(&ctx, host));
         let actual_state = host.state();
         claim_eq!(
             *actual_state,
@@ -1449,6 +1448,159 @@ mod tests {
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let result: ContractResult<()> = contract_curate_project_admin(&ctx, &mut host);
+        claim!(
+            result.is_ok(),
+            "test_contract_curate_project: Results in rejection."
+        );
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
+    }
+
+    #[concordium_test]
+    /// Test that with_rollback works for the state on invoking
+    /// overlay-projects.contract_validate_project.
+    fn test_contract_validate_project_admin_with_rollback() {
+        let admin = AccountAddress([1; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+        let project_id: ProjectId = "DLSFJJ&&X87877XJJN".into();
+        let project_owner1 = AccountAddress([7; 32]);
+        let project_owner2 = AccountAddress([8; 32]);
+        let non_validator = AccountAddress([9; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        let mut state_builder = TestStateBuilder::new();
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
+        let expected_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: state_builder.new_map(),
+        };
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        // set up overlay-users.view_user mock to return non-curator user.
+        // this leads to InvalidCaller error.
+        host.setup_mock_entrypoint(
+            user_contract_addr,
+            OwnedEntrypointName::new_unchecked("view_user".to_string()),
+            MockFn::returning_ok(UserStateResponse {
+                is_curator: false,
+                is_validator: false,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            }),
+        );
+
+        let params = ValidateProjectParam {
+            project_id,
+            owners: vec![project_owner1, project_owner2],
+            token_addr: None,
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        ctx.set_sender(Address::Account(non_validator));
+        let _ = host.with_rollback(|host| contract_validate_project(&ctx, host));
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
+    }
+
+    #[concordium_test]
+    /// Test that overlay-projects.validate_project successfully invoke overlay-users.validate
+    /// function.
+    fn test_contract_validate_project() {
+        let admin = AccountAddress([1; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+        let project_id: ProjectId = "DLSFJJ&&X87877XJJK".into();
+        let project_uri: String = "https://overlay.global/".into();
+        let project_owner1 = AccountAddress([5; 32]);
+        let project_owner2 = AccountAddress([6; 32]);
+        let validator = AccountAddress([3; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        let mut state_builder = TestStateBuilder::new();
+        let mut initial_project = state_builder.new_map();
+        initial_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Candidate,
+            },
+        );
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: initial_project,
+        };
+        let mut expected_project = state_builder.new_map();
+        expected_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Whitelist,
+            },
+        );
+        let expected_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: expected_project,
+        };
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        // set up overlay-users.view_user mock to return curator user so that the curate func would
+        // be called by this func.
+        host.setup_mock_entrypoint(
+            user_contract_addr,
+            OwnedEntrypointName::new_unchecked("view_user".to_string()),
+            MockFn::returning_ok(UserStateResponse {
+                is_curator: false,
+                is_validator: true,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            }),
+        );
+        // set up overlay-users.curate.
+        host.setup_mock_entrypoint(
+            user_contract_addr,
+            OwnedEntrypointName::new_unchecked("validate".to_string()),
+            MockFn::returning_ok(()),
+        );
+
+        let params = ValidateProjectParam {
+            project_id,
+            owners: vec![project_owner1, project_owner2],
+            token_addr: None,
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        ctx.set_sender(Address::Account(validator));
+        let result: ContractResult<()> = contract_validate_project(&ctx, &mut host);
         claim!(
             result.is_ok(),
             "test_contract_curate_project: Results in rejection."
