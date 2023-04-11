@@ -632,6 +632,7 @@ fn contract_start_sale<S: HasStateApi>(
     let state = host.state_mut();
     let old_values = state.project.get(&params.project_id).unwrap();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
+    // TODO is it ok to ensure only status? how about token addr or else?
     ensure!(
         old_values.status == ProjectStatus::Whitelist,
         Error::InvalidStatus
@@ -2323,6 +2324,138 @@ mod tests {
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let _ = host.with_rollback(|host| contract_add_seed_sale(&ctx, host));
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
+    }
+
+    #[concordium_test]
+    /// Test that with_rollback works for the state on invoking overlay-projects.start_sale.
+    fn test_contract_start_sale_with_rollback() {
+        let admin = AccountAddress([1; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+        let project_id: ProjectId = "DLSFJJ&&X87877XJJN".into();
+        let project_uri: String = "https://overlay.global/".into();
+        let project_owner1 = AccountAddress([7; 32]);
+        let project_owner2 = AccountAddress([8; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(admin);
+        let mut state_builder = TestStateBuilder::new();
+        let mut initial_project = state_builder.new_map();
+        initial_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Candidate,
+            },
+        );
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: initial_project,
+        };
+        let mut expected_project = state_builder.new_map();
+        expected_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Candidate,
+            },
+        );
+        let expected_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: expected_project,
+        };
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        let params = StartSaleParam { project_id };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        let _ = host.with_rollback(|host| contract_start_sale(&ctx, host));
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
+    }
+
+    #[concordium_test]
+    /// Test that overlay-projects.start_sale successfully update project's status as "on sale".
+    fn test_contract_start_sale() {
+        let admin = AccountAddress([1; 32]);
+        let staking_contract_addr = ContractAddress::new(1000, 0);
+        let user_contract_addr = ContractAddress::new(1001, 0);
+        let project_id: ProjectId = "DLSFJJ&&X87877XJJN".into();
+        let project_uri: String = "https://overlay.global/".into();
+        let project_owner1 = AccountAddress([7; 32]);
+        let project_owner2 = AccountAddress([8; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(admin);
+        let mut state_builder = TestStateBuilder::new();
+        let mut initial_project = state_builder.new_map();
+        initial_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::Whitelist,
+            },
+        );
+        let initial_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: initial_project,
+        };
+        let mut expected_project = state_builder.new_map();
+        expected_project.insert(
+            project_id.clone(),
+            ProjectState {
+                project_uri: Some(project_uri.clone()),
+                owners: vec![project_owner1, project_owner2],
+                pub_key: None,
+                token_addr: None,
+                seed_nft_addr: None,
+                sale_addr: None,
+                status: ProjectStatus::OnSale,
+            },
+        );
+        let expected_state = State {
+            admin,
+            staking_contract_addr,
+            user_contract_addr,
+            project: expected_project,
+        };
+        let mut host = TestHost::new(initial_state, state_builder);
+
+        let params = StartSaleParam { project_id };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+        let _ = host.with_rollback(|host| contract_start_sale(&ctx, host));
         let actual_state = host.state();
         claim_eq!(
             *actual_state,
