@@ -1,9 +1,18 @@
 [package]
 name = "overlay-projects"
+description = "Concordium smart contract modelling OVERLAY projects."
 version = "0.1.0"
-authors = ["hashmimic <hashmimic1@gmail.com>"]
+authors = [
+    "kosamit",
+    "hashmimic <hashmimic1@gmail.com>",
+    "Hiroki Tanaka <hiroki.tanaka@kumano-te.com>"
+]
 edition = "2021"
 license = "MPL-2.0"
+publish = false
+homepage = "https://overlay.global/"
+repository = "https://github.com/overlaydao/overlay-projects"
+rust-version = "1.68.1"
 
 [features]
 default = ["std"]
