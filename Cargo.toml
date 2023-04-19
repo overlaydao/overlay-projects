@@ -3,7 +3,7 @@ name = "overlay-projects"
 description = "Concordium smart contract modelling OVERLAY projects."
 version = "0.1.0"
 authors = [
-    "kosamit",
+    "kosamit <kosamit@gmail.com>",
     "hashmimic <hashmimic1@gmail.com>",
     "Hiroki Tanaka <hiroki.tanaka@kumano-te.com>"
 ]
