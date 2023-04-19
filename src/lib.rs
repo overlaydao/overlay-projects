@@ -62,14 +62,14 @@ struct UserStateResponse {
 /// The parameter schema for `overlay-users.view_user` function.
 /// For more information see https://github.com/overlaydao/overlay-users.
 #[derive(Serial, Deserial, SchemaType)]
-struct ViewUserParam {
+struct ViewUserParams {
     addr: AccountAddress,
 }
 
 /// The parameter schema for `overlay-users.curate` function.
 /// For more information see https://github.com/overlaydao/overlay-users.
 #[derive(Serial, Deserial, SchemaType)]
-struct CurateParam {
+struct CurateParams {
     addr: AccountAddress,
     project_id: ProjectId,
 }
@@ -77,39 +77,39 @@ struct CurateParam {
 /// The parameter schema for `overlay-users.validate` function.
 /// For more information see https://github.com/overlaydao/overlay-users.
 #[derive(Serial, Deserial, SchemaType)]
-struct ValidateParam {
+struct ValidateParams {
     addr: AccountAddress,
     project_id: ProjectId,
 }
 
 /// The parameter schema for `update_contract_state` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct UpdateContractStateParam {
+struct UpdateContractStateParams {
     staking_contract_addr: ContractAddress,
     user_contract_addr: ContractAddress,
 }
 /// The parameter schema for `init` function.
-type InitParam = UpdateContractStateParam;
+type InitParams = UpdateContractStateParams;
 
 /// The parameter schema for `transfer_admin` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct TransferAdminParam {
+struct TransferAdminParams {
     admin: AccountAddress,
 }
 
 /// The parameter schema for `curate_project` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct CurateProjectParam {
+struct CurateProjectParams {
     project_id: ProjectId,
     project_uri: ProjectUri,
     owners: Vec<AccountAddress>,
 }
 /// The parameter schema for `apply_curate_project` function.
-type ApplyCurateProjectParam = CurateProjectParam;
+type ApplyCurateProjectParams = CurateProjectParams;
 
 /// The parameter schema for `curate_project_admin` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct CurateProjectAdminParam {
+struct CurateProjectAdminParams {
     curator: AccountAddress,
     project_id: ProjectId,
     project_uri: ProjectUri,
@@ -118,7 +118,7 @@ struct CurateProjectAdminParam {
 
 /// The parameter schema for `validate_project` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct ValidateProjectParam {
+struct ValidateProjectParams {
     project_id: ProjectId,
     owners: Vec<AccountAddress>,
     token_addr: Option<ContractAddress>,
@@ -126,7 +126,7 @@ struct ValidateProjectParam {
 
 /// The parameter schema for `validate_project_admin` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct ValidateProjectAdminParam {
+struct ValidateProjectAdminParams {
     validator: AccountAddress,
     project_id: ProjectId,
     owners: Vec<AccountAddress>,
@@ -135,61 +135,61 @@ struct ValidateProjectAdminParam {
 
 /// The parameter schema for `add_pub_key` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct AddPubKeyParam {
+struct AddPubKeyParams {
     project_id: ProjectId,
     pub_key: PublicKey,
 }
 
 /// The parameter schema for `update_owners` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct UpdateOwnersParam {
+struct UpdateOwnersParams {
     project_id: ProjectId,
     owners: Vec<AccountAddress>,
 }
 
 /// The parameter schema for `add_seed_sale` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct AddSeedSaleParam {
+struct AddSeedSaleParams {
     project_id: ProjectId,
     seed_nft_addr: ContractAddress,
 }
 
 /// The parameter schema for `add_token_addr` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct AddTokenAddrParam {
+struct AddTokenAddrParams {
     project_id: ProjectId,
     token_addr: ContractAddress,
 }
 
 /// The parameter schema for `add_sale` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct AddSaleParam {
+struct AddSaleParams {
     project_id: ProjectId,
     sale_addr: ContractAddress,
 }
 
 /// The parameter schema for `start_sale` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct StartSaleParam {
+struct StartSaleParams {
     project_id: ProjectId,
 }
 
 /// The parameter schema for `close_sale` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct CloseSaleParam {
+struct CloseSaleParams {
     project_id: ProjectId,
 }
 
 /// The parameter schema for `upgrade` function.
 #[derive(Debug, Serialize, SchemaType)]
-struct UpgradeParam {
+struct UpgradeParams {
     module: ModuleReference,
     migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
 
 /// The parameter schema for `view_project` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct ViewProjectParam {
+struct ViewProjectParams {
     project_id: ProjectId,
 }
 
@@ -229,12 +229,12 @@ type ContractResult<A> = Result<A, Error>;
 
 /// The smart contract module init function.
 /// Although anyone can init this module, this function is expected to be called by OVERLAY team.
-#[init(contract = "overlay-projects", parameter = "InitParam")]
+#[init(contract = "overlay-projects", parameter = "InitParams")]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
     state_builder: &mut StateBuilder<S>,
 ) -> InitResult<State<S>> {
-    let params: InitParam = ctx.parameter_cursor().get()?;
+    let params: InitParams = ctx.parameter_cursor().get()?;
     let state = State {
         admin: ctx.init_origin(),
         staking_contract_addr: params.staking_contract_addr,
@@ -252,7 +252,7 @@ fn contract_init<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "update_contract_state",
-    parameter = "UpdateContractStateParam",
+    parameter = "UpdateContractStateParams",
     mutable,
     error = "Error"
 )]
@@ -262,7 +262,7 @@ fn contract_update_contract_state<S: HasStateApi>(
 ) -> ContractResult<()> {
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-    let params: UpdateContractStateParam = ctx.parameter_cursor().get()?;
+    let params: UpdateContractStateParams = ctx.parameter_cursor().get()?;
     state.staking_contract_addr = params.staking_contract_addr;
     state.user_contract_addr = params.user_contract_addr;
     Ok(())
@@ -276,7 +276,7 @@ fn contract_update_contract_state<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "transfer_admin",
-    parameter = "TransferAdminParam",
+    parameter = "TransferAdminParams",
     mutable,
     error = "Error"
 )]
@@ -286,7 +286,7 @@ fn contract_transfer_admin<S: HasStateApi>(
 ) -> ContractResult<()> {
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-    let params: TransferAdminParam = ctx.parameter_cursor().get()?;
+    let params: TransferAdminParams = ctx.parameter_cursor().get()?;
     state.admin = params.admin;
     Ok(())
 }
@@ -300,7 +300,7 @@ fn contract_transfer_admin<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "apply_curate_project",
-    parameter = "ApplyCurateProjectParam",
+    parameter = "ApplyCurateProjectParams",
     mutable,
     error = "Error"
 )]
@@ -310,7 +310,7 @@ fn contract_apply_curate_project<S: HasStateApi>(
 ) -> ContractResult<()> {
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-    let params: ApplyCurateProjectParam = ctx.parameter_cursor().get()?;
+    let params: ApplyCurateProjectParams = ctx.parameter_cursor().get()?;
     let existed = state.project.insert(
         params.project_id,
         ProjectState {
@@ -328,6 +328,7 @@ fn contract_apply_curate_project<S: HasStateApi>(
 }
 
 /// Add inputted project to curated project list of caller's overlay-user state.
+/// If the project has not been registered, a new project is registered.
 ///
 /// Caller: Anyone who is a curator user.
 /// Reject if:
@@ -335,7 +336,7 @@ fn contract_apply_curate_project<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "curate_project",
-    parameter = "CurateProjectParam",
+    parameter = "CurateProjectParams",
     mutable,
     error = "Error"
 )]
@@ -343,7 +344,7 @@ fn contract_curate_project<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let params: CurateProjectParam = ctx.parameter_cursor().get()?;
+    let params: CurateProjectParams = ctx.parameter_cursor().get()?;
 
     // let's check the caller is the curator.
     let func = EntrypointName::new_unchecked("view_user");
@@ -352,7 +353,7 @@ fn contract_curate_project<S: HasStateApi>(
         Address::Contract(_) => bail!(Error::OnlyAccount),
         Address::Account(account_address) => account_address,
     };
-    let view_user_params = ViewUserParam {
+    let view_user_params = ViewUserParams {
         addr: sender_account,
     };
     let user_state: UserStateResponse = host
@@ -362,7 +363,6 @@ fn contract_curate_project<S: HasStateApi>(
         .get()?;
     ensure!(user_state.is_curator, Error::InvalidCaller);
 
-    // TODO need to check the project id is proper??
     let state = host.state_mut();
     state
         .project
@@ -379,7 +379,7 @@ fn contract_curate_project<S: HasStateApi>(
 
     // let's add the project to curated project list of this overlay-user's state.
     let func = EntrypointName::new("curate".into()).unwrap();
-    let curate_param = CurateParam {
+    let curate_param = CurateParams {
         addr: sender_account,
         project_id: params.project_id,
     };
@@ -388,11 +388,16 @@ fn contract_curate_project<S: HasStateApi>(
         .map_err(|_| Error::FailedInvokeUserContract)
 }
 
-/// TODO TBD
+/// This function is called by OVERLAY admin to curate a new project on behalf of curators.
+///
+/// Caller: current admin account.
+/// Reject if:
+/// * Caller is not the current admin account.
+/// * The inputted curator account address is not a curator.
 #[receive(
     contract = "overlay-projects",
     name = "curate_project_admin",
-    parameter = "CurateProjectAdminParam",
+    parameter = "CurateProjectAdminParams",
     mutable,
     error = "Error"
 )]
@@ -401,10 +406,10 @@ fn contract_curate_project_admin<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     ensure!(ctx.invoker() == host.state().admin, Error::InvalidCaller);
-    let params: CurateProjectAdminParam = ctx.parameter_cursor().get()?;
+    let params: CurateProjectAdminParams = ctx.parameter_cursor().get()?;
     let func = EntrypointName::new_unchecked("view_user");
     let user_contract_addr = host.state_mut().user_contract_addr;
-    let view_user_params = ViewUserParam {
+    let view_user_params = ViewUserParams {
         addr: params.curator,
     };
     let user_state: UserStateResponse = host
@@ -414,7 +419,6 @@ fn contract_curate_project_admin<S: HasStateApi>(
         .get()?;
 
     ensure!(user_state.is_curator, Error::InvalidCaller);
-
     let state = host.state_mut();
     state
         .project
@@ -428,7 +432,6 @@ fn contract_curate_project_admin<S: HasStateApi>(
             sale_addr: None,
             status: ProjectStatus::Candidate,
         });
-    // TODO is it OK not to call `overlay-users.curate` here?
     Ok(())
 }
 
@@ -441,7 +444,7 @@ fn contract_curate_project_admin<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "validate_project",
-    parameter = "ValidateProjectParam",
+    parameter = "ValidateProjectParams",
     mutable,
     error = "Error"
 )]
@@ -449,7 +452,7 @@ fn contract_validate_project<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let params: ValidateProjectParam = ctx.parameter_cursor().get()?;
+    let params: ValidateProjectParams = ctx.parameter_cursor().get()?;
 
     // let's check the caller is the curator.
     let func = EntrypointName::new("view_user".into()).unwrap();
@@ -458,7 +461,7 @@ fn contract_validate_project<S: HasStateApi>(
         Address::Contract(_) => bail!(Error::OnlyAccount),
         Address::Account(account_address) => account_address,
     };
-    let view_user_params = ViewUserParam {
+    let view_user_params = ViewUserParams {
         addr: sender_account,
     };
     let user_state: UserStateResponse = host
@@ -477,7 +480,6 @@ fn contract_validate_project<S: HasStateApi>(
         Error::InvalidStatus
     );
 
-    // TODO is it OK params.token_addr / params.owners is not used anywhere inside this function.
     state
         .project
         .entry(params.project_id.clone())
@@ -486,7 +488,7 @@ fn contract_validate_project<S: HasStateApi>(
         });
 
     let func = EntrypointName::new("validate".into()).unwrap();
-    let validate_param = ValidateParam {
+    let validate_param = ValidateParams {
         addr: sender_account,
         project_id: params.project_id,
     };
@@ -495,11 +497,16 @@ fn contract_validate_project<S: HasStateApi>(
         .map_err(|_| Error::FailedInvokeUserContract)
 }
 
-/// TODO TBD
+/// This function is called by OVERLAY admin to validate a project on behalf of validators.
+///
+/// Caller: current admin account.
+/// Reject if:
+/// * Caller is not the current admin account.
+/// * The inputted curator account address is not a validator.
 #[receive(
     contract = "overlay-projects",
     name = "validate_project_admin",
-    parameter = "ValidateProjectAdminParam",
+    parameter = "ValidateProjectAdminParams",
     mutable,
     error = "Error"
 )]
@@ -508,12 +515,12 @@ fn contract_validate_project_admin<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
     ensure!(ctx.invoker() == host.state().admin, Error::InvalidCaller);
-    let params: ValidateProjectAdminParam = ctx.parameter_cursor().get()?;
+    let params: ValidateProjectAdminParams = ctx.parameter_cursor().get()?;
 
     // let's call the inputted validator address is actually a validator.
     let func = EntrypointName::new("view_user".into()).unwrap();
     let user_contract_addr = host.state_mut().user_contract_addr;
-    let view_user_params = ViewUserParam {
+    let view_user_params = ViewUserParams {
         addr: params.validator,
     };
     let user_state: UserStateResponse = host
@@ -531,16 +538,12 @@ fn contract_validate_project_admin<S: HasStateApi>(
         project.status == ProjectStatus::Candidate,
         Error::InvalidStatus
     );
-
-    // TODO is it OK params.token_addr / params.owners is not used anywhere inside this function.
     state
         .project
         .entry(params.project_id.clone())
         .and_modify(|project_state| {
             project_state.status = ProjectStatus::Whitelist;
         });
-
-    // TODO is it OK not to call `overlay-users.validate` here?
     Ok(())
 }
 
@@ -556,7 +559,7 @@ fn contract_validate_project_admin<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "add_token_addr",
-    parameter = "AddTokenAddrParam",
+    parameter = "AddTokenAddrParams",
     mutable,
     error = "Error"
 )]
@@ -564,7 +567,7 @@ fn contract_add_token_addr<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let params: AddTokenAddrParam = ctx.parameter_cursor().get()?;
+    let params: AddTokenAddrParams = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     let project = state.project.get_mut(&params.project_id);
     ensure!(project.is_some(), Error::ProjectNotFound);
@@ -592,7 +595,7 @@ fn contract_add_token_addr<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "add_pub_key",
-    parameter = "AddPubKeyParam",
+    parameter = "AddPubKeyParams",
     mutable,
     error = "Error"
 )]
@@ -602,7 +605,7 @@ fn contract_add_pub_key<S: HasStateApi>(
 ) -> ContractResult<()> {
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-    let params: AddPubKeyParam = ctx.parameter_cursor().get()?;
+    let params: AddPubKeyParams = ctx.parameter_cursor().get()?;
     let project = state.project.get_mut(&params.project_id);
     ensure!(project.is_some(), Error::ProjectNotFound);
     let mut project = project.unwrap();
@@ -624,7 +627,7 @@ fn contract_add_pub_key<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "update_owners",
-    parameter = "UpdateOwnersParam",
+    parameter = "UpdateOwnersParams",
     mutable,
     error = "Error"
 )]
@@ -634,7 +637,7 @@ fn contract_update_owners<S: HasStateApi>(
 ) -> ContractResult<()> {
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-    let params: UpdateOwnersParam = ctx.parameter_cursor().get()?;
+    let params: UpdateOwnersParams = ctx.parameter_cursor().get()?;
     let project = state.project.get_mut(&params.project_id);
     ensure!(project.is_some(), Error::ProjectNotFound);
     let mut project = project.unwrap();
@@ -656,7 +659,7 @@ fn contract_update_owners<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "add_seed_sale",
-    parameter = "AddSeedSaleParam",
+    parameter = "AddSeedSaleParams",
     mutable,
     error = "Error"
 )]
@@ -666,7 +669,7 @@ fn contract_add_seed_sale<S: HasStateApi>(
 ) -> ContractResult<()> {
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-    let params: AddSeedSaleParam = ctx.parameter_cursor().get()?;
+    let params: AddSeedSaleParams = ctx.parameter_cursor().get()?;
     let project = state.project.get_mut(&params.project_id);
     ensure!(project.is_some(), Error::ProjectNotFound);
     let mut project = project.unwrap();
@@ -689,7 +692,7 @@ fn contract_add_seed_sale<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "add_sale",
-    parameter = "AddSaleParam",
+    parameter = "AddSaleParams",
     mutable,
     error = "Error"
 )]
@@ -699,7 +702,7 @@ fn contract_add_sale<S: HasStateApi>(
 ) -> ContractResult<()> {
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-    let params: AddSaleParam = ctx.parameter_cursor().get()?;
+    let params: AddSaleParams = ctx.parameter_cursor().get()?;
     let project = state.project.get_mut(&params.project_id);
     ensure!(project.is_some(), Error::ProjectNotFound);
     let mut project = project.unwrap();
@@ -722,7 +725,7 @@ fn contract_add_sale<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "start_sale",
-    parameter = "StartSaleParam",
+    parameter = "StartSaleParams",
     mutable
 )]
 fn contract_start_sale<S: HasStateApi>(
@@ -731,7 +734,7 @@ fn contract_start_sale<S: HasStateApi>(
 ) -> ContractResult<()> {
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-    let params: StartSaleParam = ctx.parameter_cursor().get()?;
+    let params: StartSaleParams = ctx.parameter_cursor().get()?;
     let project = state.project.get_mut(&params.project_id);
     ensure!(project.is_some(), Error::ProjectNotFound);
     let mut project = project.unwrap();
@@ -753,7 +756,7 @@ fn contract_start_sale<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "close_sale",
-    parameter = "CloseSaleParam",
+    parameter = "CloseSaleParams",
     mutable
 )]
 fn contract_close_sale<S: HasStateApi>(
@@ -762,7 +765,7 @@ fn contract_close_sale<S: HasStateApi>(
 ) -> ContractResult<()> {
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-    let params: CloseSaleParam = ctx.parameter_cursor().get()?;
+    let params: CloseSaleParams = ctx.parameter_cursor().get()?;
     let project = state.project.get_mut(&params.project_id);
     ensure!(project.is_some(), Error::ProjectNotFound);
     let mut project = project.unwrap();
@@ -779,7 +782,7 @@ fn contract_close_sale<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "upgrade",
-    parameter = "UpgradeParam",
+    parameter = "UpgradeParams",
     mutable
 )]
 fn contract_upgrade<S: HasStateApi>(
@@ -787,7 +790,7 @@ fn contract_upgrade<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveResult<()> {
     ensure!(ctx.sender().matches_account(&ctx.owner()));
-    let params: UpgradeParam = ctx.parameter_cursor().get()?;
+    let params: UpgradeParams = ctx.parameter_cursor().get()?;
     host.upgrade(params.module)?;
     if let Some((func, parameter)) = params.migrate {
         host.invoke_contract_raw(
@@ -832,14 +835,14 @@ fn contract_view_admin<S: HasStateApi>(
 #[receive(
     contract = "overlay-projects",
     name = "view_project",
-    parameter = "ViewProjectParam",
+    parameter = "ViewProjectParams",
     return_value = "ProjectState"
 )]
 fn contract_view_project<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ViewProjectResponse> {
-    let params: ViewProjectParam = ctx.parameter_cursor().get()?;
+    let params: ViewProjectParams = ctx.parameter_cursor().get()?;
     let state = host.state();
     let project = state.project.get(&params.project_id);
     ensure!(project.is_some(), Error::ProjectNotFound);
@@ -1013,7 +1016,7 @@ mod tests {
         };
 
         // create params
-        let params = InitParam {
+        let params = InitParams {
             staking_contract_addr,
             user_contract_addr,
         };
@@ -1060,7 +1063,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = UpdateContractStateParam {
+        let params = UpdateContractStateParams {
             staking_contract_addr: next_staking_contract_addr,
             user_contract_addr: next_user_contract_addr,
         };
@@ -1102,7 +1105,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = UpdateContractStateParam {
+        let params = UpdateContractStateParams {
             staking_contract_addr: next_staking_contract_addr,
             user_contract_addr: next_user_contract_addr,
         };
@@ -1147,7 +1150,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = TransferAdminParam { admin: invoker };
+        let params = TransferAdminParams { admin: invoker };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let _ = host.with_rollback(|host| contract_transfer_admin(&ctx, host));
@@ -1184,7 +1187,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = TransferAdminParam {
+        let params = TransferAdminParams {
             admin: admin_to_be_set,
         };
         let params_byte = to_bytes(&params);
@@ -1232,7 +1235,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = ApplyCurateProjectParam {
+        let params = ApplyCurateProjectParams {
             project_id,
             project_uri,
             owners: vec![project_owner1, project_owner2],
@@ -1289,7 +1292,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = ApplyCurateProjectParam {
+        let params = ApplyCurateProjectParams {
             project_id,
             project_uri,
             owners: vec![project_owner1, project_owner2],
@@ -1349,7 +1352,7 @@ mod tests {
             }),
         );
 
-        let params = CurateProjectParam {
+        let params = CurateProjectParams {
             project_id,
             project_uri,
             owners: vec![project_owner1, project_owner2],
@@ -1426,7 +1429,7 @@ mod tests {
             MockFn::returning_ok(()),
         );
 
-        let params = CurateProjectParam {
+        let params = CurateProjectParams {
             project_id,
             project_uri,
             owners: vec![project_owner1, project_owner2],
@@ -1489,7 +1492,7 @@ mod tests {
             }),
         );
 
-        let params = CurateProjectAdminParam {
+        let params = CurateProjectAdminParams {
             curator: project_owner1,
             project_id,
             project_uri,
@@ -1561,7 +1564,7 @@ mod tests {
             }),
         );
 
-        let params = CurateProjectAdminParam {
+        let params = CurateProjectAdminParams {
             curator,
             project_id,
             project_uri,
@@ -1623,7 +1626,7 @@ mod tests {
             }),
         );
 
-        let params = ValidateProjectParam {
+        let params = ValidateProjectParams {
             project_id,
             owners: vec![project_owner1, project_owner2],
             token_addr: None,
@@ -1714,7 +1717,7 @@ mod tests {
             MockFn::returning_ok(()),
         );
 
-        let params = ValidateProjectParam {
+        let params = ValidateProjectParams {
             project_id,
             owners: vec![project_owner1, project_owner2],
             token_addr: None,
@@ -1777,7 +1780,7 @@ mod tests {
             }),
         );
 
-        let params = ValidateProjectAdminParam {
+        let params = ValidateProjectAdminParams {
             validator: non_validator,
             project_id,
             owners: vec![project_owner1, project_owner2],
@@ -1862,7 +1865,7 @@ mod tests {
             }),
         );
 
-        let params = ValidateProjectAdminParam {
+        let params = ValidateProjectAdminParams {
             validator,
             project_id,
             owners: vec![project_owner1, project_owner2],
@@ -1938,7 +1941,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = AddTokenAddrParam {
+        let params = AddTokenAddrParams {
             project_id,
             token_addr,
         };
@@ -2008,7 +2011,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = AddTokenAddrParam {
+        let params = AddTokenAddrParams {
             project_id,
             token_addr,
         };
@@ -2078,7 +2081,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = AddPubKeyParam {
+        let params = AddPubKeyParams {
             project_id,
             pub_key,
         };
@@ -2148,7 +2151,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = AddPubKeyParam {
+        let params = AddPubKeyParams {
             project_id,
             pub_key,
         };
@@ -2219,7 +2222,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = UpdateOwnersParam {
+        let params = UpdateOwnersParams {
             project_id,
             owners: vec![new_project_owner1, new_project_owner2],
         };
@@ -2290,7 +2293,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = UpdateOwnersParam {
+        let params = UpdateOwnersParams {
             project_id,
             owners: vec![new_project_owner1, new_project_owner2],
         };
@@ -2360,7 +2363,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = AddSeedSaleParam {
+        let params = AddSeedSaleParams {
             project_id,
             seed_nft_addr,
         };
@@ -2430,7 +2433,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = AddSeedSaleParam {
+        let params = AddSeedSaleParams {
             project_id,
             seed_nft_addr,
         };
@@ -2499,7 +2502,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = StartSaleParam { project_id };
+        let params = StartSaleParams { project_id };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let _ = host.with_rollback(|host| contract_start_sale(&ctx, host));
@@ -2565,7 +2568,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = StartSaleParam { project_id };
+        let params = StartSaleParams { project_id };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let _ = host.with_rollback(|host| contract_start_sale(&ctx, host));
@@ -2631,7 +2634,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = CloseSaleParam { project_id };
+        let params = CloseSaleParams { project_id };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let _ = host.with_rollback(|host| contract_close_sale(&ctx, host));
@@ -2697,7 +2700,7 @@ mod tests {
         };
         let mut host = TestHost::new(initial_state, state_builder);
 
-        let params = CloseSaleParam { project_id };
+        let params = CloseSaleParams { project_id };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
         let _ = host.with_rollback(|host| contract_close_sale(&ctx, host));
